@@ -18,30 +18,30 @@
 package org.apache.cassandra.hadoop;
 
 import java.io.IOException;
-import java.net.InetAddress;
 import java.util.*;
 import java.util.concurrent.*;
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.auth.PasswordAuthenticator;
+import com.datastax.driver.core.BoundStatement;
+import com.datastax.driver.core.Host;
+import com.datastax.driver.core.Metadata;
+import com.datastax.driver.core.PreparedStatement;
+import com.datastax.driver.core.ResultSet;
+import com.datastax.driver.core.Row;
+import com.datastax.driver.core.Session;
+import com.datastax.driver.core.TokenRange;
+import com.datastax.driver.core.exceptions.NoHostAvailableException;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
-import org.apache.cassandra.thrift.*;
+import org.apache.cassandra.hadoop.cql3.*;
+import org.apache.cassandra.thrift.KeyRange;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapreduce.*;
-import org.apache.thrift.TApplicationException;
-import org.apache.thrift.TException;
-import org.apache.thrift.protocol.TBinaryProtocol;
-import org.apache.thrift.protocol.TProtocol;
-import org.apache.thrift.transport.TTransport;
-import org.apache.thrift.transport.TTransportException;
 
 
 public abstract class AbstractColumnFamilyInputFormat<K, Y> extends InputFormat<K, Y> implements org.apache.hadoop.mapred.InputFormat<K, Y>
@@ -51,7 +51,7 @@ public abstract class AbstractColumnFamilyInputFormat<K, Y> extends InputFormat<
     public static final String MAPRED_TASK_ID = "mapred.task.id";
     // The simple fact that we need this is because the old Hadoop API wants us to "write"
     // to the key and value whereas the new asks for it.
-    // I choose 8kb as the default max key size (instanciated only once), but you can
+    // I choose 8kb as the default max key size (instantiated only once), but you can
     // override it in your jobConf with this setting.
     public static final String CASSANDRA_HADOOP_MAX_KEY_SIZE = "cassandra.hadoop.max_key_size";
     public static final int    CASSANDRA_HADOOP_MAX_KEY_SIZE_DEFAULT = 8192;
@@ -59,6 +59,7 @@ public abstract class AbstractColumnFamilyInputFormat<K, Y> extends InputFormat<
     private String keyspace;
     private String cfName;
     private IPartitioner partitioner;
+    private Session session;
 
     protected void validateConfiguration(Configuration conf)
     {
@@ -72,51 +73,21 @@ public abstract class AbstractColumnFamilyInputFormat<K, Y> extends InputFormat<
             throw new UnsupportedOperationException("You must set the Cassandra partitioner class with setInputPartitioner");
     }
 
-    public static Cassandra.Client createAuthenticatedClient(String location, int port, Configuration conf) throws Exception
-    {
-        logger.debug("Creating authenticated client for CF input format");
-        TTransport transport;
-        try
-        {
-            transport = ConfigHelper.getClientTransportFactory(conf).openTransport(location, port);
-        }
-        catch (Exception e)
-        {
-            throw new TTransportException("Failed to open a transport to " + location + ":" + port + ".", e);
-        }
-        TProtocol binaryProtocol = new TBinaryProtocol(transport, true, true);
-        Cassandra.Client client = new Cassandra.Client(binaryProtocol);
-
-        // log in
-        client.set_keyspace(ConfigHelper.getInputKeyspace(conf));
-        if ((ConfigHelper.getInputKeyspaceUserName(conf) != null) && (ConfigHelper.getInputKeyspacePassword(conf) != null))
-        {
-            Map<String, String> creds = new HashMap<String, String>();
-            creds.put(PasswordAuthenticator.USERNAME_KEY, ConfigHelper.getInputKeyspaceUserName(conf));
-            creds.put(PasswordAuthenticator.PASSWORD_KEY, ConfigHelper.getInputKeyspacePassword(conf));
-            AuthenticationRequest authRequest = new AuthenticationRequest(creds);
-            client.login(authRequest);
-        }
-        logger.debug("Authenticated client for CF input format created successfully");
-        return client;
-    }
-
     public List<InputSplit> getSplits(JobContext context) throws IOException
     {
         Configuration conf = HadoopCompat.getConfiguration(context);;
 
         validateConfiguration(conf);
 
-        // cannonical ranges and nodes holding replicas
-        List<TokenRange> masterRangeNodes = getRangeMap(conf);
-
         keyspace = ConfigHelper.getInputKeyspace(conf);
         cfName = ConfigHelper.getInputColumnFamily(conf);
         partitioner = ConfigHelper.getInputPartitioner(conf);
         logger.debug("partitioner is {}", partitioner);
 
+        // canonical ranges and nodes holding replicas
+        Map<TokenRange, Set<Host>> masterRangeNodes = getRangeMap(conf, keyspace);
 
-        // cannonical ranges, split into pieces, fetching the splits in parallel
+        // canonical ranges, split into pieces, fetching the splits in parallel
         ExecutorService executor = new ThreadPoolExecutor(0, 128, 60L, TimeUnit.SECONDS, new LinkedBlockingQueue<Runnable>());
         List<InputSplit> splits = new ArrayList<InputSplit>();
 
@@ -130,7 +101,7 @@ public abstract class AbstractColumnFamilyInputFormat<K, Y> extends InputFormat<
                 if (jobKeyRange.start_key != null)
                 {
                     if (!partitioner.preservesOrder())
-                        throw new UnsupportedOperationException("KeyRange based on keys can only be used with a order preserving paritioner");
+                        throw new UnsupportedOperationException("KeyRange based on keys can only be used with a order preserving partitioner");
                     if (jobKeyRange.start_token != null)
                         throw new IllegalArgumentException("only start_key supported");
                     if (jobKeyRange.end_token != null)
@@ -149,26 +120,25 @@ public abstract class AbstractColumnFamilyInputFormat<K, Y> extends InputFormat<
                 }
             }
 
-            for (TokenRange range : masterRangeNodes)
+            session = CqlConfigHelper.getInputCluster(ConfigHelper.getInputInitialAddress(conf).split(","), conf).connect();
+            Metadata metadata = session.getCluster().getMetadata();
+
+            for (TokenRange range : masterRangeNodes.keySet())
             {
                 if (jobRange == null)
                 {
-                    // for each range, pick a live owner and ask it to compute bite-sized splits
-                    splitfutures.add(executor.submit(new SplitCallable(range, conf)));
+                    // for each tokenRange, pick a live owner and ask it to compute bite-sized splits
+                    splitfutures.add(executor.submit(new SplitCallable(range, masterRangeNodes.get(range), conf)));
                 }
                 else
                 {
-                    Range<Token> dhtRange = new Range<Token>(partitioner.getTokenFactory().fromString(range.start_token),
-                                                             partitioner.getTokenFactory().fromString(range.end_token));
-
-                    if (dhtRange.intersects(jobRange))
+                    TokenRange jobTokenRange = rangeToTokenRange(metadata, jobRange);
+                    if (range.intersects(jobTokenRange))
                     {
-                        for (Range<Token> intersection: dhtRange.intersectionWith(jobRange))
+                        for (TokenRange intersection: range.intersectWith(jobTokenRange))
                         {
-                            range.start_token = partitioner.getTokenFactory().toString(intersection.left);
-                            range.end_token = partitioner.getTokenFactory().toString(intersection.right);
-                            // for each range, pick a live owner and ask it to compute bite-sized splits
-                            splitfutures.add(executor.submit(new SplitCallable(range, conf)));
+                            // for each tokenRange, pick a live owner and ask it to compute bite-sized splits
+                            splitfutures.add(executor.submit(new SplitCallable(intersection,  masterRangeNodes.get(range), conf)));
                         }
                     }
                 }
@@ -197,53 +167,55 @@ public abstract class AbstractColumnFamilyInputFormat<K, Y> extends InputFormat<
         return splits;
     }
 
+    private TokenRange rangeToTokenRange(Metadata metadata, Range<Token> range)
+    {
+        return metadata.newTokenRange(metadata.newToken(partitioner.getTokenFactory().toString(range.left)),
+                metadata.newToken(partitioner.getTokenFactory().toString(range.right)));
+    }
+
     /**
-     * Gets a token range and splits it up according to the suggested
+     * Gets a token tokenRange and splits it up according to the suggested
      * size into input splits that Hadoop can use.
      */
     class SplitCallable implements Callable<List<InputSplit>>
     {
 
-        private final TokenRange range;
+        private final TokenRange tokenRange;
+        private final Set<Host> hosts;
         private final Configuration conf;
 
-        public SplitCallable(TokenRange tr, Configuration conf)
+        public SplitCallable(TokenRange tr, Set<Host> hosts, Configuration conf)
         {
-            this.range = tr;
+            this.tokenRange = tr;
+            this.hosts = hosts;
             this.conf = conf;
         }
 
         public List<InputSplit> call() throws Exception
         {
             ArrayList<InputSplit> splits = new ArrayList<InputSplit>();
-            List<CfSplit> subSplits = getSubSplits(keyspace, cfName, range, conf);
-            assert range.rpc_endpoints.size() == range.endpoints.size() : "rpc_endpoints size must match endpoints size";
+            Map<TokenRange, Long> subSplits;
+            subSplits = getSubSplits(keyspace, cfName, tokenRange, hosts, conf);
             // turn the sub-ranges into InputSplits
-            String[] endpoints = range.endpoints.toArray(new String[range.endpoints.size()]);
+            String[] endpoints = new String[hosts.size()];
             // hadoop needs hostname, not ip
             int endpointIndex = 0;
-            for (String endpoint: range.rpc_endpoints)
+            for (Host endpoint: hosts)
             {
-                String endpoint_address = endpoint;
-                if (endpoint_address == null || endpoint_address.equals("0.0.0.0"))
-                    endpoint_address = range.endpoints.get(endpointIndex);
-                endpoints[endpointIndex++] = InetAddress.getByName(endpoint_address).getHostName();
+                String endpoint_address = endpoint.getAddress().getHostName();
+                endpoints[endpointIndex++] = endpoint_address;
             }
 
-            Token.TokenFactory factory = partitioner.getTokenFactory();
-            for (CfSplit subSplit : subSplits)
+            for (TokenRange subSplit : subSplits.keySet())
             {
-                Token left = factory.fromString(subSplit.getStart_token());
-                Token right = factory.fromString(subSplit.getEnd_token());
-                Range<Token> range = new Range<Token>(left, right);
-                List<Range<Token>> ranges = range.isWrapAround() ? range.unwrap() : ImmutableList.of(range);
-                for (Range<Token> subrange : ranges)
+                List<TokenRange> ranges = subSplit.unwrap();
+                for (TokenRange subrange : ranges)
                 {
                     ColumnFamilySplit split =
                             new ColumnFamilySplit(
-                                    factory.toString(subrange.left),
-                                    factory.toString(subrange.right),
-                                    subSplit.getRow_count(),
+                                    subrange.getStart().toString().substring(2),
+                                    subrange.getEnd().toString().substring(2),
+                                    subSplits.get(subSplit),
                                     endpoints);
 
                     logger.debug("adding {}", split);
@@ -254,78 +226,77 @@ public abstract class AbstractColumnFamilyInputFormat<K, Y> extends InputFormat<
         }
     }
 
-    private List<CfSplit> getSubSplits(String keyspace, String cfName, TokenRange range, Configuration conf) throws IOException
+    private Map<TokenRange, Long> getSubSplits(String keyspace, String cfName, TokenRange range, Set<Host> hosts, Configuration conf) throws IOException
     {
-        int splitsize = ConfigHelper.getInputSplitSize(conf);
-        for (int i = 0; i < range.rpc_endpoints.size(); i++)
+        int splitSize = ConfigHelper.getInputSplitSize(conf);
+        Iterator<Host> hostIterator = hosts.iterator();
+        while (hostIterator.hasNext())
         {
-            String host = range.rpc_endpoints.get(i);
-
-            if (host == null || host.equals("0.0.0.0"))
-                host = range.endpoints.get(i);
-
+            Host host = hostIterator.next();
             try
             {
-                Cassandra.Client client = ConfigHelper.createConnection(conf, host, ConfigHelper.getInputRpcPort(conf));
-                client.set_keyspace(keyspace);
-
-                try
-                {
-                    return client.describe_splits_ex(cfName, range.start_token, range.end_token, splitsize);
-                }
-                catch (TApplicationException e)
-                {
-                    // fallback to guessing split size if talking to a server without describe_splits_ex method
-                    if (e.getType() == TApplicationException.UNKNOWN_METHOD)
-                    {
-                        List<String> splitPoints = client.describe_splits(cfName, range.start_token, range.end_token, splitsize);
-                        return tokenListToSplits(splitPoints, splitsize);
-                    }
-                    throw e;
-                }
+                return describeSplits(keyspace, cfName, range, splitSize);
             }
-            catch (IOException e)
+            catch (NoHostAvailableException e)
             {
                 logger.debug("failed connect to endpoint {}", host, e);
             }
-            catch (InvalidRequestException e)
-            {
-                throw new RuntimeException(e);
-            }
-            catch (TException e)
+            catch (Exception e)
             {
                 throw new RuntimeException(e);
             }
         }
-        throw new IOException("failed connecting to all endpoints " + StringUtils.join(range.endpoints, ","));
+        throw new IOException("failed connecting to all endpoints " + StringUtils.join(hosts, ","));
     }
 
-    private List<CfSplit> tokenListToSplits(List<String> splitTokens, int splitsize)
+    private Map<TokenRange, Set<Host>> getRangeMap(Configuration conf, String keyspace) throws IOException
     {
-        List<CfSplit> splits = Lists.newArrayListWithExpectedSize(splitTokens.size() - 1);
-        for (int j = 0; j < splitTokens.size() - 1; j++)
-            splits.add(new CfSplit(splitTokens.get(j), splitTokens.get(j + 1), splitsize));
-        return splits;
-    }
+        Session session = CqlConfigHelper.getInputCluster(ConfigHelper.getInputInitialAddress(conf).split(","), conf).connect();
 
-    private List<TokenRange> getRangeMap(Configuration conf) throws IOException
-    {
-        Cassandra.Client client = ConfigHelper.getClientFromInputAddressList(conf);
-
-        List<TokenRange> map;
+        Map<TokenRange, Set<Host>> map = new HashMap<>();
         try
         {
-            map = client.describe_local_ring(ConfigHelper.getInputKeyspace(conf));
+            Metadata metadata = session.getCluster().getMetadata();
+            for (TokenRange tokenRange : metadata.getTokenRanges())
+            {
+                map.put(tokenRange, metadata.getReplicas(keyspace, tokenRange));
+            }
         }
-        catch (InvalidRequestException e)
-        {
-            throw new RuntimeException(e);
-        }
-        catch (TException e)
+        catch (Exception e)
         {
             throw new RuntimeException(e);
         }
         return map;
+    }
+
+    private Map<TokenRange, Long> describeSplits(String keyspace, String table, TokenRange tokenRange, int splitSize)
+    {
+        PreparedStatement sizeEstimateQuery = session.prepare("Select mean_partition_size, partitions_count from" +
+                " system.size_estimates WHERE keyspace_name=? and table_name=? and range_start=? and range_end=?");
+        BoundStatement boundStatement = new BoundStatement(sizeEstimateQuery);
+        ResultSet resultSet = session.execute(boundStatement.bind(keyspace, table, tokenRange.getStart().toString(), tokenRange.getEnd().toString()));
+
+        Row row = resultSet.one();
+        //If we have no data on this split, return the full split
+        //i.e., do not subsplit
+        //Assume smallest granularity of partition count available from CASSANDRA-7688
+        if (row == null)
+        {
+            Map<TokenRange, Long> wrappedTokenRange = new HashMap<>();
+            wrappedTokenRange.put(tokenRange, new Long(128));
+            return wrappedTokenRange;
+        }
+        long meanPartitionSize = row.getLong(0);
+        long partitionCount = row.getLong(1);
+        int splitCount = (int)((meanPartitionSize * partitionCount) / splitSize);
+        List<TokenRange> splitRanges = tokenRange.splitEvenly(splitCount);
+        Map<TokenRange, Long> rangesWithLength = new HashMap<>();
+        for (TokenRange range : splitRanges)
+        {
+            rangesWithLength.put(range, partitionCount/splitCount);
+        }
+
+        return rangesWithLength;
     }
 
     //
