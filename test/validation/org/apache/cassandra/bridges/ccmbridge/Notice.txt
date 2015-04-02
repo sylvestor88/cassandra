@@ -1,0 +1,1 @@
+CCMBridge.java based on src/test/java/com/datastax/driver/core/CCMBridge.java at https://github.com/datastax/java-driver
