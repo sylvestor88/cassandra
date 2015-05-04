@@ -47,7 +47,6 @@ import com.datastax.driver.core.ProtocolOptions;
 import com.datastax.driver.core.QueryOptions;
 import com.datastax.driver.core.SSLOptions;
 import com.datastax.driver.core.SocketOptions;
-import org.apache.cassandra.config.Config;
 import org.apache.cassandra.hadoop.ConfigHelper;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.hadoop.conf.Configuration;
@@ -525,7 +524,7 @@ public class CqlConfigHelper
         return Optional.of(getClientAuthProvider(authProvider.get(), conf));
     }
 
-    private static Optional<SSLOptions> getSSLOptions(Configuration conf)
+    public static Optional<SSLOptions> getSSLOptions(Configuration conf)
     {
         Optional<String> truststorePath = getInputNativeSSLTruststorePath(conf);
         Optional<String> keystorePath = getInputNativeSSLKeystorePath(conf);

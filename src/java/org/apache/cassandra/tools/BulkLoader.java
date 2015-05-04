@@ -18,18 +18,23 @@
 package org.apache.cassandra.tools;
 
 import java.io.File;
+import java.io.IOException;
 import java.net.InetAddress;
 import java.net.MalformedURLException;
 import java.net.UnknownHostException;
 import java.util.*;
 
+import com.google.common.base.Optional;
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.Multimap;
 import org.apache.commons.cli.*;
 
+import com.datastax.driver.core.SSLOptions;
+import javax.net.ssl.SSLContext;
 import org.apache.cassandra.config.*;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.io.sstable.SSTableLoader;
+import org.apache.cassandra.security.SSLFactory;
 import org.apache.cassandra.streaming.*;
 import org.apache.cassandra.utils.JVMStabilityInspector;
 import org.apache.cassandra.utils.NativeSSTableLoaderClient;
@@ -76,7 +81,8 @@ public class BulkLoader
                         options.passwd,
                         options.storagePort,
                         options.sslStoragePort,
-                        options.serverEncOptions),
+                        options.serverEncOptions,
+                        buildSSLOptions((EncryptionOptions.ClientEncryptionOptions)options.encOptions)),
                 handler,
                 options.connectionsPerHost);
         DatabaseDescriptor.setStreamThroughputOutboundMegabitsPerSec(options.throttle);
@@ -247,6 +253,31 @@ public class BulkLoader
         }
     }
 
+    private static Optional<SSLOptions> buildSSLOptions(EncryptionOptions.ClientEncryptionOptions clientEncryptionOptions)
+    {
+
+        Optional<SSLOptions> sslOptions;
+        try
+        {
+            if (clientEncryptionOptions.enabled)
+            {
+                SSLContext sslContext;
+                sslContext = SSLFactory.createSSLContext(clientEncryptionOptions, true);
+                sslOptions = Optional.of(new SSLOptions(sslContext, clientEncryptionOptions.cipher_suites));
+
+            }
+            else
+            {
+                sslOptions = Optional.absent();
+            }
+        }
+        catch(IOException e)
+        {
+            throw new RuntimeException("Could not create SSL Context.", e);
+        }
+        return sslOptions;
+    }
+
     static class ExternalClient extends NativeSSTableLoaderClient
     {
         private final int storagePort;
@@ -259,9 +290,10 @@ public class BulkLoader
                               String passwd,
                               int storagePort,
                               int sslStoragePort,
-                              EncryptionOptions.ServerEncryptionOptions serverEncryptionOptions)
+                              EncryptionOptions.ServerEncryptionOptions serverEncryptionOptions,
+                              Optional<SSLOptions> sslOptionsOptional)
         {
-            super(hosts, port, user, passwd);
+            super(hosts, port, user, passwd, sslOptionsOptional);
             this.storagePort = storagePort;
             this.sslStoragePort = sslStoragePort;
             this.serverEncOptions = serverEncryptionOptions;

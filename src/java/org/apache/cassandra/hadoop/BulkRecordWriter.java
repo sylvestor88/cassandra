@@ -262,7 +262,8 @@ public final class BulkRecordWriter extends RecordWriter<ByteBuffer, List<Mutati
             super(resolveHostAddresses(conf),
                   CqlConfigHelper.getOutputNativePort(conf),
                   ConfigHelper.getOutputKeyspaceUserName(conf),
-                  ConfigHelper.getOutputKeyspacePassword(conf));
+                  ConfigHelper.getOutputKeyspacePassword(conf),
+                  CqlConfigHelper.getSSLOptions(conf));
         }
 
         private static Collection<InetAddress> resolveHostAddresses(Configuration conf)

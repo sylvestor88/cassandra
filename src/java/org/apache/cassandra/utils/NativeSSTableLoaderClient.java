@@ -17,8 +17,11 @@
  */
 package org.apache.cassandra.utils;
 
+import java.io.IOException;
 import java.net.InetAddress;
 import java.util.*;
+
+import com.google.common.base.Optional;
 
 import com.datastax.driver.core.*;
 import org.apache.cassandra.config.CFMetaData;
@@ -39,8 +42,15 @@ public class NativeSSTableLoaderClient extends SSTableLoader.Client
     private final int port;
     private final String username;
     private final String password;
+    private final Optional<SSLOptions> sslOptions;
 
     public NativeSSTableLoaderClient(Collection<InetAddress> hosts, int port, String username, String password)
+    {
+        this(hosts, port, username, password, Optional.<SSLOptions> absent());
+    }
+
+    public NativeSSTableLoaderClient(Collection<InetAddress> hosts, int port, String username, String password,
+                                     Optional<SSLOptions> sslOptions)
     {
         super();
         this.tables = new HashMap<>();
@@ -48,6 +58,7 @@ public class NativeSSTableLoaderClient extends SSTableLoader.Client
         this.port = port;
         this.username = username;
         this.password = password;
+        this.sslOptions = sslOptions;
     }
 
     public void init(String keyspace)
@@ -115,6 +126,8 @@ public class NativeSSTableLoaderClient extends SSTableLoader.Client
     private Metadata fetchClusterMetadata()
     {
         Cluster.Builder builder = Cluster.builder().addContactPoints(hosts).withPort(port);
+        if (sslOptions.isPresent())
+            builder.withSSL(sslOptions.get());
         if (username != null && password != null)
             builder = builder.withCredentials(username, password);
 
