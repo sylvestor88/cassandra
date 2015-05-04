@@ -26,6 +26,7 @@ import com.google.common.base.Optional;
 import com.datastax.driver.core.*;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.ColumnFamilyType;
+import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.db.composites.CellNameType;
 import org.apache.cassandra.db.composites.CellNames;
 import org.apache.cassandra.db.marshal.AbstractType;
@@ -34,6 +35,7 @@ import org.apache.cassandra.db.marshal.TypeParser;
 import org.apache.cassandra.dht.*;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.io.sstable.SSTableLoader;
+import org.apache.cassandra.schema.LegacySchemaTables;
 
 public class NativeSSTableLoaderClient extends SSTableLoader.Client
 {
@@ -63,7 +65,8 @@ public class NativeSSTableLoaderClient extends SSTableLoader.Client
 
     public void init(String keyspace)
     {
-        Metadata metadata = fetchClusterMetadata();
+        Session session = getSession();
+        Metadata metadata = session.getCluster().getMetadata();
 
         setPartitioner(metadata.getPartitioner());
 
@@ -81,7 +84,7 @@ public class NativeSSTableLoaderClient extends SSTableLoader.Client
         }
 
         for (TableMetadata table : metadata.getKeyspace(keyspace).getTables())
-            tables.put(table.getName(), convertTableMetadata(table));
+            tables.put(table.getName(), convertTableMetadata(table, session));
     }
 
     public CFMetaData getTableMetadata(String tableName)
@@ -95,35 +98,41 @@ public class NativeSSTableLoaderClient extends SSTableLoader.Client
         tables.put(cfm.cfName, cfm);
     }
 
-    private CFMetaData convertTableMetadata(TableMetadata table)
+    private CFMetaData convertTableMetadata(TableMetadata table, Session session)
     {
-        return new CFMetaData(table.getKeyspace().getName(),
+        String keyspace = table.getKeyspace().getName();
+        String tableQuery = String.format("SELECT * FROM %s.%s WHERE keyspace_name = '%s'",
+                SystemKeyspace.NAME,
+                LegacySchemaTables.COLUMNFAMILIES,
+                keyspace);
+        ResultSet tableRows = session.execute(tableQuery);
+        Row tableRow = tableRows.one();
+
+        return new CFMetaData(keyspace,
                               table.getName(),
-                              ColumnFamilyType.Standard,
-                              getComparator(table),
+                              getCFType(tableRow),
+                              getComparator(tableRow),
                               table.getId());
     }
 
-    // FIXME this is not smart enough
-    private CellNameType getComparator(TableMetadata table)
+    private ColumnFamilyType getCFType(Row row)
     {
-        AbstractType type;
-        if (table.getClusteringColumns().size() > 1)
-        {
-            ArrayList<AbstractType> types = new ArrayList<>();
-            for (ColumnMetadata column : table.getClusteringColumns())
-                types.add(TypeParser.parseCqlName(column.getType().toString()));
-            type = CompositeType.getInstance((AbstractType[]) types.toArray());
-        }
-        else
-        {
-            type = TypeParser.parseCqlName(table.getClusteringColumns().get(0).getType().toString());
-        }
-
-        return CellNames.fromAbstractType(type, table.getOptions().isCompactStorage());
+        return ColumnFamilyType.valueOf(row.getString("type"));
     }
 
-    private Metadata fetchClusterMetadata()
+    private CellNameType getComparator(Row row)
+    {
+        AbstractType rawComparator = TypeParser.parse(row.getString("comparator"));
+        AbstractType subComparator = row.getString("subcomparator") != null ?
+                TypeParser.parse(row.getString("subcomparator")) : null;
+
+        AbstractType<?> fullRawComparator = CFMetaData.makeRawAbstractType(rawComparator, subComparator);
+        boolean isDense = row.getBool("is_dense");
+
+        return CellNames.fromAbstractType(fullRawComparator, isDense);
+    }
+
+    private Session getSession()
     {
         Cluster.Builder builder = Cluster.builder().addContactPoints(hosts).withPort(port);
         if (sslOptions.isPresent())
@@ -133,8 +142,7 @@ public class NativeSSTableLoaderClient extends SSTableLoader.Client
 
         try (Cluster cluster = builder.build())
         {
-            cluster.connect();
-            return cluster.getMetadata();
+            return cluster.connect();
         }
         catch (Exception e)
         {
