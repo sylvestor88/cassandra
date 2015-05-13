@@ -22,6 +22,8 @@ package org.apache.cassandra.bridges;
 
 public interface Bridge
 {
-    void setUp();
+    // TODO: Make this static when I can use JDK 8
+    Bridge create(int nodeCount);
+
     void destroy();
 }
