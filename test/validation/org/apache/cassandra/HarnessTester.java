@@ -20,10 +20,71 @@
  */
 package org.apache.cassandra;
 
+import java.io.ByteArrayInputStream;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.URL;
+
+import org.junit.Test;
+
+import com.google.common.io.ByteStreams;
 import org.apache.cassandra.bridges.Bridge;
+import org.apache.cassandra.htest.Config;
+import org.apache.cassandra.exceptions.ConfigurationException;
+import org.apache.cassandra.modules.Module;
+import org.apache.cassandra.modules.SimpleWriteModule;
+import org.yaml.snakeyaml.Yaml;
+import org.yaml.snakeyaml.error.YAMLException;
+
 
 public class HarnessTester
 {
     public Bridge cluster;
 
+    @Test
+    public void harnessTest()
+    {
+        Config config = loadConfig(getConfigURL("./configs/test.yaml"));
+        Module module = new SimpleWriteModule(config);
+    }
+
+    public Config loadConfig(URL url)
+    {
+        try
+        {
+            byte[] configBytes;
+            try (InputStream is = url.openStream())
+            {
+                configBytes = ByteStreams.toByteArray(is);
+            }
+            catch (IOException e)
+            {
+                throw new AssertionError(e);
+            }
+            org.yaml.snakeyaml.constructor.Constructor constructor = new org.yaml.snakeyaml.constructor.Constructor(Config.class);
+            Yaml yaml = new Yaml(constructor);
+            Config result = yaml.loadAs(new ByteArrayInputStream(configBytes), Config.class);
+            return result;
+        }
+        catch (YAMLException e)
+        {
+            throw new ConfigurationException("Invalid yaml: " + url, e);
+        }
+    }
+
+    static URL getConfigURL(String yamlPath)
+    {
+        URL url;
+        try
+        {
+            url = new URL("file:" + File.separator + File.separator + yamlPath);
+            url.openStream().close(); // catches well-formed but bogus URLs
+            return url;
+        }
+        catch (Exception e)
+        {
+            throw new AssertionError("Yaml path was invalid", e);
+        }
+    }
 }

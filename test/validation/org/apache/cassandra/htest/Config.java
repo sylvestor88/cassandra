@@ -18,40 +18,8 @@
  * under the License.
  *
  */
-package org.apache.cassandra;
+package org.apache.cassandra.htest;
 
-import java.util.Collection;
-
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
-import org.junit.runners.Parameterized.Parameters;
-import org.junit.Test;
-import org.junit.After;
-
-import org.apache.cassandra.plugins.Plugin;
-
-@RunWith(Parameterized.class)
-public class IsolatedOperationTest extends HarnessTester
+public class Config
 {
-    private Plugin operation;
-    @Parameters
-    public Collection<Object[]> configs()
-    {
-        return operation.getConfigs();
-    }
-
-
-    @Test
-    public void test()
-    {
-        cluster.setUp();
-        operation.perform();
-        operation.validate();
-    }
-
-    @After
-    public void tearDown()
-    {
-        cluster.destroy();
-    }
 }

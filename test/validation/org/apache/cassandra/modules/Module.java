@@ -19,15 +19,29 @@
  *
  */
 
-package org.apache.cassandra.plugins;
+package org.apache.cassandra.modules;
 
-import java.util.Collection;
+import org.apache.cassandra.concurrent.DebuggableThreadPoolExecutor;
+import org.apache.cassandra.htest.Config;
 
-public abstract class Plugin
+public abstract class Module implements Runnable
 {
-    public abstract void perform();
+    public DebuggableThreadPoolExecutor executor;
+    private Config config;
+    protected boolean prepared;
+
+    public Module(Config config)
+    {
+        this.config = config;
+    }
+
+    public void run()
+    {
+        if (!prepared)
+        {
+            throw new RuntimeException("Module was run before being prepared.");
+        }
+    }
 
     public abstract boolean validate();
-
-    public abstract Collection<Object[]> getConfigs();
 }
