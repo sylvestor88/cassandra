@@ -22,6 +22,7 @@ import org.apache.hadoop.mapreduce.InputSplit;
 
 import java.io.DataInput;
 import java.io.DataOutput;
+import java.io.EOFException;
 import java.io.IOException;
 import java.util.Arrays;
 
@@ -97,7 +98,14 @@ public class ColumnFamilySplit extends InputSplit implements Writable, org.apach
         {
             dataNodes[i] = in.readUTF();
         }
-        length = in.readLong();
+        try
+        {
+            length = in.readLong();
+        }
+        catch (EOFException e)
+        {
+            //We must be deserializing in a mixed-version cluster.
+        }
     }
 
     @Override
