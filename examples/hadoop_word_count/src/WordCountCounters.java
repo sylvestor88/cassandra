@@ -18,9 +18,9 @@
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.Map;
 import java.util.SortedMap;
 
-import org.apache.cassandra.db.Cell;
 import org.apache.cassandra.thrift.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -60,15 +60,15 @@ public class WordCountCounters extends Configured implements Tool
         System.exit(0);
     }
 
-    public static class SumMapper extends Mapper<ByteBuffer, SortedMap<ByteBuffer, Cell>, Text, LongWritable>
+    public static class SumMapper extends Mapper<ByteBuffer, SortedMap<ByteBuffer, ByteBuffer>, Text, LongWritable>
     {
-        public void map(ByteBuffer key, SortedMap<ByteBuffer, Cell> columns, Context context) throws IOException, InterruptedException
+        public void map(ByteBuffer key, SortedMap<ByteBuffer, ByteBuffer> columns, Context context) throws IOException, InterruptedException
         {
             long sum = 0;
-            for (Cell cell : columns.values())
+            for (Map.Entry<ByteBuffer, ByteBuffer> column : columns.entrySet())
             {
-                logger.debug("read " + key + ":" + cell.name() + " from " + context.getInputSplit());
-                sum += ByteBufferUtil.toLong(cell.value());
+                logger.debug("read " + key + ":" + column.getKey() + " from " + context.getInputSplit());
+                sum += ByteBufferUtil.toLong(column.getValue());
             }
             context.write(new Text(ByteBufferUtil.string(key)), new LongWritable(sum));
         }

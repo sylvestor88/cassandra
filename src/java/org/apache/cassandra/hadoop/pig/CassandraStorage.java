@@ -30,7 +30,6 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.auth.PasswordAuthenticator;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
-import org.apache.cassandra.db.Cell;
 import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.exceptions.ConfigurationException;
@@ -83,7 +82,7 @@ public class CassandraStorage extends LoadFunc implements StoreFuncInterface, Lo
     private boolean slice_reverse = false;
     private boolean allow_deletes = false;
 
-    private RecordReader<ByteBuffer, Map<ByteBuffer, Cell>> reader;
+    private RecordReader<ByteBuffer, Map<ByteBuffer, ByteBuffer>> reader;
     private RecordWriter<ByteBuffer, List<Mutation>> writer;
 
     private boolean widerows = false;
@@ -113,7 +112,7 @@ public class CassandraStorage extends LoadFunc implements StoreFuncInterface, Lo
     
     // wide row hacks
     private ByteBuffer lastKey;
-    private Map<ByteBuffer, Cell> lastRow;
+    private Map<ByteBuffer, ByteBuffer> lastRow;
     private boolean hasNext = true;
 
     public CassandraStorage()
@@ -164,9 +163,9 @@ public class CassandraStorage extends LoadFunc implements StoreFuncInterface, Lo
                             key = reader.getCurrentKey();
                             tuple = keyToTuple(key, cfDef, parseType(cfDef.getKey_validation_class()));
                         }
-                        for (Map.Entry<ByteBuffer, Cell> entry : lastRow.entrySet())
+                        for (Map.Entry<ByteBuffer, ByteBuffer> entry : lastRow.entrySet())
                         {
-                            bag.add(columnToTuple(entry.getValue(), cfDef, parseType(cfDef.getComparator_type())));
+                            bag.add(columnToTuple(entry.getKey(), entry.getValue(), cfDef, parseType(cfDef.getComparator_type())));
                         }
                         lastKey = null;
                         lastRow = null;
@@ -202,9 +201,9 @@ public class CassandraStorage extends LoadFunc implements StoreFuncInterface, Lo
                             tuple = keyToTuple(lastKey, cfDef, parseType(cfDef.getKey_validation_class()));
                         else
                             addKeyToTuple(tuple, lastKey, cfDef, parseType(cfDef.getKey_validation_class()));
-                        for (Map.Entry<ByteBuffer, Cell> entry : lastRow.entrySet())
+                        for (Map.Entry<ByteBuffer, ByteBuffer> entry : lastRow.entrySet())
                         {
-                            bag.add(columnToTuple(entry.getValue(), cfDef, parseType(cfDef.getComparator_type())));
+                            bag.add(columnToTuple(entry.getKey(), entry.getValue(), cfDef, parseType(cfDef.getComparator_type())));
                         }
                         tuple.append(bag);
                         lastKey = key;
@@ -216,19 +215,19 @@ public class CassandraStorage extends LoadFunc implements StoreFuncInterface, Lo
                     else
                         addKeyToTuple(tuple, lastKey, cfDef, parseType(cfDef.getKey_validation_class()));
                 }
-                SortedMap<ByteBuffer, Cell> row = (SortedMap<ByteBuffer, Cell>)reader.getCurrentValue();
+                SortedMap<ByteBuffer, ByteBuffer> row = (SortedMap<ByteBuffer, ByteBuffer>)reader.getCurrentValue();
                 if (lastRow != null) // prepend what was read last time
                 {
-                    for (Map.Entry<ByteBuffer, Cell> entry : lastRow.entrySet())
+                    for (Map.Entry<ByteBuffer, ByteBuffer> entry : lastRow.entrySet())
                     {
-                        bag.add(columnToTuple(entry.getValue(), cfDef, parseType(cfDef.getComparator_type())));
+                        bag.add(columnToTuple(entry.getKey(), entry.getValue(), cfDef, parseType(cfDef.getComparator_type())));
                     }
                     lastKey = null;
                     lastRow = null;
                 }
-                for (Map.Entry<ByteBuffer, Cell> entry : row.entrySet())
+                for (Map.Entry<ByteBuffer, ByteBuffer> entry : row.entrySet())
                 {
-                    bag.add(columnToTuple(entry.getValue(), cfDef, parseType(cfDef.getComparator_type())));
+                    bag.add(columnToTuple(entry.getKey(), entry.getValue(), cfDef, parseType(cfDef.getComparator_type())));
                 }
             }
         }
@@ -251,7 +250,7 @@ public class CassandraStorage extends LoadFunc implements StoreFuncInterface, Lo
 
             CfDef cfDef = getCfDef(loadSignature);
             ByteBuffer key = reader.getCurrentKey();
-            Map<ByteBuffer, Cell> cf = reader.getCurrentValue();
+            Map<ByteBuffer, ByteBuffer> cf = reader.getCurrentValue();
             assert key != null && cf != null;
 
             // output tuple, will hold the key, each indexed column in a tuple, then a bag of the rest
@@ -276,7 +275,7 @@ public class CassandraStorage extends LoadFunc implements StoreFuncInterface, Lo
                 }
                 if (hasColumn)
                 {
-                    tuple.append(columnToTuple(cf.get(cdef.name), cfDef, parseType(cfDef.getComparator_type())));
+                    tuple.append(columnToTuple(cdef.name, cf.get(cdef.name), cfDef, parseType(cfDef.getComparator_type())));
                 }
                 else if (!cql3Table)
                 {   // otherwise, we need to add an empty tuple to take its place
@@ -285,10 +284,10 @@ public class CassandraStorage extends LoadFunc implements StoreFuncInterface, Lo
                 added.put(cdef.name, true);
             }
             // now add all the other columns
-            for (Map.Entry<ByteBuffer, Cell> entry : cf.entrySet())
+            for (Map.Entry<ByteBuffer, ByteBuffer> entry : cf.entrySet())
             {
                 if (!added.containsKey(entry.getKey()))
-                    bag.add(columnToTuple(entry.getValue(), cfDef, parseType(cfDef.getComparator_type())));
+                    bag.add(columnToTuple(entry.getKey(), entry.getValue(), cfDef, parseType(cfDef.getComparator_type())));
             }
             tuple.append(bag);
             // finally, special top-level indexes if needed
@@ -296,7 +295,7 @@ public class CassandraStorage extends LoadFunc implements StoreFuncInterface, Lo
             {
                 for (ColumnDef cdef : getIndexes())
                 {
-                    Tuple throwaway = columnToTuple(cf.get(cdef.name), cfDef, parseType(cfDef.getComparator_type()));
+                    Tuple throwaway = columnToTuple(cdef.name, cf.get(cdef.name), cfDef, parseType(cfDef.getComparator_type()));
                     tuple.append(throwaway.get(1));
                 }
             }
@@ -1338,11 +1337,9 @@ public class CassandraStorage extends LoadFunc implements StoreFuncInterface, Lo
     }
 
     /** convert a column to a tuple */
-    protected Tuple columnToTuple(Cell col, CfDef cfDef, AbstractType comparator) throws IOException
+    protected Tuple columnToTuple(ByteBuffer colName, ByteBuffer value, CfDef cfDef, AbstractType comparator) throws IOException
     {
         Tuple pair = TupleFactory.getInstance().newTuple(2);
-
-        ByteBuffer colName = col.name().toByteBuffer();
 
         // name
         if(comparator instanceof AbstractCompositeType)
@@ -1355,10 +1352,10 @@ public class CassandraStorage extends LoadFunc implements StoreFuncInterface, Lo
         if (validators.get(colName) == null)
         {
             Map<MarshallerType, AbstractType> marshallers = getDefaultMarshallers(cfDef);
-            StorageHelper.setTupleValue(pair, 1, StorageHelper.cassandraToObj(marshallers.get(MarshallerType.DEFAULT_VALIDATOR), col.value(), nativeProtocolVersion));
+            StorageHelper.setTupleValue(pair, 1, StorageHelper.cassandraToObj(marshallers.get(MarshallerType.DEFAULT_VALIDATOR), value, nativeProtocolVersion));
         }
         else
-            StorageHelper.setTupleValue(pair, 1, StorageHelper.cassandraToObj(validators.get(colName), col.value(), nativeProtocolVersion));
+            StorageHelper.setTupleValue(pair, 1, StorageHelper.cassandraToObj(validators.get(colName), value, nativeProtocolVersion));
         return pair;
     }
 
