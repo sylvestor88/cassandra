@@ -325,8 +325,8 @@ class CqlRecordWriter extends RecordWriter<Map<String, ByteBuffer>, List<ByteBuf
                         //There are too many ways for the Thread.interrupted() state to be cleared, so
                         //we can't rely on that here. Until the java driver gives us a better way of knowing
                         //that this exception came from an InterruptedException, this is the best solution.
-                        if (e instanceof DriverException && e.getMessage().contains("Connection thread interrupted")) {
-                            lastException = new IOException(e);
+                        if (e instanceof DriverException && e.getMessage().contains("Connection thread interrupted"))
+                        {
                             iter.previous();
                         }
                         closeInternal();

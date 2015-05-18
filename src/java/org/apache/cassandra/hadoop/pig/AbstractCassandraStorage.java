@@ -32,7 +32,6 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.auth.PasswordAuthenticator;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
-import org.apache.cassandra.db.Cell;
 import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.db.marshal.AbstractCompositeType.CompositeComponent;
@@ -122,12 +121,10 @@ public abstract class AbstractCassandraStorage extends LoadFunc implements Store
     }
 
     /** convert a column to a tuple */
-    protected Tuple columnToTuple(Cell col, CfInfo cfInfo, AbstractType comparator) throws IOException
+    protected Tuple columnToTuple(ByteBuffer colName, ByteBuffer value, CfInfo cfInfo, AbstractType comparator) throws IOException
     {
         CfDef cfDef = cfInfo.cfDef;
         Tuple pair = TupleFactory.getInstance().newTuple(2);
-
-        ByteBuffer colName = col.name().toByteBuffer();
 
         // name
         if(comparator instanceof AbstractCompositeType)
@@ -145,10 +142,10 @@ public abstract class AbstractCassandraStorage extends LoadFunc implements Store
         if (validators.get(colName) == null)
         {
             Map<MarshallerType, AbstractType> marshallers = getDefaultMarshallers(cfDef);
-            setTupleValue(pair, 1, cassandraToObj(marshallers.get(MarshallerType.DEFAULT_VALIDATOR), col.value()));
+            setTupleValue(pair, 1, cassandraToObj(marshallers.get(MarshallerType.DEFAULT_VALIDATOR), value));
         }
         else
-            setTupleValue(pair, 1, cassandraToObj(validators.get(colName), col.value()));
+            setTupleValue(pair, 1, cassandraToObj(validators.get(colName), value));
         return pair;
     }
 
