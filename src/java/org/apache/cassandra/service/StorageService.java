@@ -204,8 +204,14 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
     public volatile VersionedValue.VersionedValueFactory valueFactory = new VersionedValue.VersionedValueFactory(getPartitioner());
 
     private Thread drainOnShutdown = null;
+    private boolean inShutdownHook = false;
 
     public static final StorageService instance = new StorageService();
+
+    public boolean isInShutdownHook()
+    {
+        return inShutdownHook;
+    }
 
     public static IPartitioner getPartitioner()
     {
@@ -559,6 +565,21 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             MessagingService.instance().listen(FBUtilities.getLocalAddress());
     }
 
+    public void populateTokenMetadata()
+    {
+        if (Boolean.parseBoolean(System.getProperty("cassandra.load_ring_state", "true")))
+        {
+            logger.info("Populating token metadata from system tables");
+            Multimap<InetAddress, Token> loadedTokens = SystemKeyspace.loadTokens();
+            if (!shouldBootstrap()) // if we have not completed bootstrapping, we should not add ourselves as a normal token
+                loadedTokens.putAll(FBUtilities.getBroadcastAddress(), SystemKeyspace.getSavedTokens());
+            for (InetAddress ep : loadedTokens.keySet())
+                tokenMetadata.updateNormalTokens(loadedTokens.get(ep), ep);
+
+            logger.info("Token metadata: {}", tokenMetadata);
+        }
+    }
+
     public synchronized void initServer() throws ConfigurationException
     {
         initServer(RING_DELAY);
@@ -599,7 +620,6 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                 }
                 else
                 {
-                    tokenMetadata.updateNormalTokens(loadedTokens.get(ep), ep);
                     if (loadedHostIds.containsKey(ep))
                         tokenMetadata.updateHostId(loadedHostIds.get(ep), ep);
                     Gossiper.instance.addSavedEndpoint(ep);
@@ -613,6 +633,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             @Override
             public void runMayThrow() throws InterruptedException
             {
+                inShutdownHook = true;
                 ExecutorService counterMutationStage = StageManager.getStage(Stage.COUNTER_MUTATION);
                 ExecutorService mutationStage = StageManager.getStage(Stage.MUTATION);
                 if (mutationStage.isShutdown() && counterMutationStage.isShutdown())
@@ -1751,7 +1772,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
     private boolean isRpcReady(InetAddress endpoint)
     {
-        return MessagingService.instance().getVersion(endpoint) < MessagingService.VERSION_30 ||
+        return MessagingService.instance().getVersion(endpoint) < MessagingService.VERSION_22 ||
                 Gossiper.instance.getEndpointStateForEndpoint(endpoint).isRpcReady();
     }
 
@@ -3753,6 +3774,8 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
      */
     public synchronized void drain() throws IOException, InterruptedException, ExecutionException
     {
+        inShutdownHook = true;
+        
         ExecutorService counterMutationStage = StageManager.getStage(Stage.COUNTER_MUTATION);
         ExecutorService mutationStage = StageManager.getStage(Stage.MUTATION);
         if (mutationStage.isTerminated() && counterMutationStage.isTerminated())

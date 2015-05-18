@@ -24,6 +24,9 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import javax.annotation.Nullable;
+
+import com.google.common.base.Function;
 import com.google.common.collect.*;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.slf4j.Logger;
@@ -31,6 +34,7 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ColumnFamilyStore;
+import org.apache.cassandra.db.DataTracker;
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.db.RowPosition;
 import org.apache.cassandra.dht.AbstractBounds;
@@ -145,6 +149,7 @@ public class StreamSession implements IEndpointStateChangeSubscriber
 
     private AtomicBoolean isAborted = new AtomicBoolean(false);
     private final boolean keepSSTableLevel;
+    private final boolean isIncremental;
 
     public static enum State
     {
@@ -166,7 +171,7 @@ public class StreamSession implements IEndpointStateChangeSubscriber
      * @param connecting Actual connecting address
      * @param factory is used for establishing connection
      */
-    public StreamSession(InetAddress peer, InetAddress connecting, StreamConnectionFactory factory, int index, boolean keepSSTableLevel)
+    public StreamSession(InetAddress peer, InetAddress connecting, StreamConnectionFactory factory, int index, boolean keepSSTableLevel, boolean isIncremental)
     {
         this.peer = peer;
         this.connecting = connecting;
@@ -175,6 +180,7 @@ public class StreamSession implements IEndpointStateChangeSubscriber
         this.handler = new ConnectionHandler(this);
         this.metrics = StreamingMetrics.get(connecting);
         this.keepSSTableLevel = keepSSTableLevel;
+        this.isIncremental = isIncremental;
     }
 
     public UUID planId()
@@ -196,6 +202,12 @@ public class StreamSession implements IEndpointStateChangeSubscriber
     {
         return keepSSTableLevel;
     }
+
+    public boolean isIncremental()
+    {
+        return isIncremental;
+    }
+
 
     /**
      * Bind this session to report to specific {@link StreamResultFuture} and
@@ -303,10 +315,32 @@ public class StreamSession implements IEndpointStateChangeSubscriber
         {
             for (ColumnFamilyStore cfStore : stores)
             {
-                List<AbstractBounds<RowPosition>> rowBoundsList = new ArrayList<>(ranges.size());
+                final List<AbstractBounds<RowPosition>> rowBoundsList = new ArrayList<>(ranges.size());
                 for (Range<Token> range : ranges)
                     rowBoundsList.add(Range.makeRowRange(range));
-                refs.addAll(cfStore.selectAndReference(cfStore.viewFilter(rowBoundsList)).refs);
+                refs.addAll(cfStore.selectAndReference(new Function<DataTracker.View, List<SSTableReader>>()
+                {
+                    public List<SSTableReader> apply(DataTracker.View view)
+                    {
+                        List<SSTableReader> filteredSSTables = ColumnFamilyStore.CANONICAL_SSTABLES.apply(view);
+                        Set<SSTableReader> sstables = Sets.newHashSet();
+                        if (filteredSSTables != null)
+                        {
+                            for (AbstractBounds<RowPosition> rowBounds : rowBoundsList)
+                            {
+                                // sstableInBounds may contain early opened sstables
+                                for (SSTableReader sstable : view.sstablesInBounds(rowBounds))
+                                {
+                                    if (filteredSSTables.contains(sstable) && (!isIncremental || !sstable.isRepaired()))
+                                        sstables.add(sstable);
+                                }
+                            }
+                        }
+
+                        logger.debug("ViewFilter for {}/{} sstables", sstables.size(), view.sstables.size());
+                        return ImmutableList.copyOf(sstables);
+                    }
+                }).refs);
             }
 
             List<SSTableStreamingSections> sections = new ArrayList<>(refs.size());
@@ -315,7 +349,7 @@ public class StreamSession implements IEndpointStateChangeSubscriber
                 long repairedAt = overriddenRepairedAt;
                 if (overriddenRepairedAt == ActiveRepairService.UNREPAIRED_SSTABLE)
                     repairedAt = sstable.getSSTableMetadata().repairedAt;
-                sections.add(new SSTableStreamingSections(sstable, refs.get(sstable),
+                sections.add(new SSTableStreamingSections(refs.get(sstable),
                                                           sstable.getPositionsForRanges(ranges),
                                                           sstable.estimatedKeysForRanges(ranges),
                                                           repairedAt));
@@ -343,29 +377,27 @@ public class StreamSession implements IEndpointStateChangeSubscriber
                 continue;
             }
 
-            UUID cfId = details.sstable.metadata.cfId;
+            UUID cfId = details.ref.get().metadata.cfId;
             StreamTransferTask task = transfers.get(cfId);
             if (task == null)
             {
                 task = new StreamTransferTask(this, cfId);
                 transfers.put(cfId, task);
             }
-            task.addTransferFile(details.sstable, details.ref, details.estimatedKeys, details.sections, details.repairedAt);
+            task.addTransferFile(details.ref, details.estimatedKeys, details.sections, details.repairedAt);
             iter.remove();
         }
     }
 
     public static class SSTableStreamingSections
     {
-        public final SSTableReader sstable;
         public final Ref<SSTableReader> ref;
         public final List<Pair<Long, Long>> sections;
         public final long estimatedKeys;
         public final long repairedAt;
 
-        public SSTableStreamingSections(SSTableReader sstable, Ref ref, List<Pair<Long, Long>> sections, long estimatedKeys, long repairedAt)
+        public SSTableStreamingSections(Ref<SSTableReader> ref, List<Pair<Long, Long>> sections, long estimatedKeys, long repairedAt)
         {
-            this.sstable = sstable;
             this.ref = ref;
             this.sections = sections;
             this.estimatedKeys = estimatedKeys;

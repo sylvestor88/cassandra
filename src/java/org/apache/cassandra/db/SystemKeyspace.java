@@ -673,6 +673,37 @@ public final class SystemKeyspace
     }
 
     /**
+     * Get release version for given endpoint.
+     * If release version is unknown, then this returns null.
+     *
+     * @param ep endpoint address to check
+     * @return Release version or null if version is unknown.
+     */
+    public static SemanticVersion getReleaseVersion(InetAddress ep)
+    {
+        try
+        {
+            if (FBUtilities.getBroadcastAddress().equals(ep))
+            {
+                return new SemanticVersion(FBUtilities.getReleaseVersionString());
+            }
+            String req = "SELECT release_version FROM system.%s WHERE peer=?";
+            UntypedResultSet result = executeInternal(String.format(req, PEERS), ep);
+            if (result != null && result.one().has("release_version"))
+            {
+                return new SemanticVersion(result.one().getString("release_version"));
+            }
+            // version is unknown
+            return null;
+        }
+        catch (IllegalArgumentException e)
+        {
+            // version string cannot be parsed
+            return null;
+        }
+    }
+
+    /**
      * One of three things will happen if you try to read the system keyspace:
      * 1. files are present and you can read them: great
      * 2. no files are there: great (new node is assumed)
@@ -1088,7 +1119,7 @@ public final class SystemKeyspace
         try
         {
             DataOutputBuffer out = new DataOutputBuffer();
-            Range.tokenSerializer.serialize(range, out, MessagingService.VERSION_30);
+            Range.tokenSerializer.serialize(range, out, MessagingService.VERSION_22);
             return out.buffer();
         }
         catch (IOException e)
@@ -1104,7 +1135,7 @@ public final class SystemKeyspace
         {
             return (Range<Token>) Range.tokenSerializer.deserialize(ByteStreams.newDataInput(ByteBufferUtil.getArray(rawRange)),
                                                                     partitioner,
-                                                                    MessagingService.VERSION_30);
+                                                                    MessagingService.VERSION_22);
         }
         catch (IOException e)
         {

@@ -422,6 +422,8 @@ public class DatabaseDescriptor
                                              "setting of 'unlimited'.  Please see the comments in cassandra.yaml " +
                                              "for rpc_server_type and rpc_max_threads.",
                                              false);
+        if (ThriftServer.HSHA.equals(conf.rpc_server_type) && conf.rpc_max_threads > (FBUtilities.getAvailableProcessors() * 2 + 1024))
+            logger.warn("rpc_max_threads setting of {} may be too high for the hsha server and cause unnecessary thread contention, reducing performance", conf.rpc_max_threads);
 
         /* end point snitch */
         if (conf.endpoint_snitch == null)
@@ -615,11 +617,6 @@ public class DatabaseDescriptor
         }
         if (seedProvider.getSeeds().size() == 0)
             throw new ConfigurationException("The seed provider lists no seeds.", false);
-
-        if (conf.batch_size_fail_threshold_in_kb == null)
-        {
-            conf.batch_size_fail_threshold_in_kb = conf.batch_size_warn_threshold_in_kb * 10;
-        }
     }
 
     private static IEndpointSnitch createEndpointSnitch(String snitchClassName) throws ConfigurationException
@@ -672,6 +669,11 @@ public class DatabaseDescriptor
         return conf.roles_validity_in_ms;
     }
 
+    public static void setRolesValidity(int validity)
+    {
+        conf.roles_validity_in_ms = validity;
+    }
+
     public static int getRolesCacheMaxEntries()
     {
         return conf.roles_cache_max_entries;
@@ -682,6 +684,11 @@ public class DatabaseDescriptor
         return conf.roles_update_interval_in_ms == -1
              ? conf.roles_validity_in_ms
              : conf.roles_update_interval_in_ms;
+    }
+
+    public static void setRolesUpdateInterval(int interval)
+    {
+        conf.roles_update_interval_in_ms = interval;
     }
 
     public static void setPermissionsUpdateInterval(int updateInterval)
@@ -787,6 +794,11 @@ public class DatabaseDescriptor
     public static int getBatchSizeFailThresholdInKB()
     {
         return conf.batch_size_fail_threshold_in_kb;
+    }
+
+    public static void setBatchSizeWarnThresholdInKB(int threshold)
+    {
+        conf.batch_size_warn_threshold_in_kb = threshold;
     }
 
     public static void setBatchSizeFailThresholdInKB(int threshold)
@@ -1670,5 +1682,10 @@ public class DatabaseDescriptor
     public static int getOtcCoalescingWindow()
     {
         return conf.otc_coalescing_window_us;
+    }
+
+    public static boolean enableUserDefinedFunctions()
+    {
+        return conf.enable_user_defined_functions;
     }
 }

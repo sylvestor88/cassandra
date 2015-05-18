@@ -1706,7 +1706,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
             if (filter.filter instanceof SliceQueryFilter)
             {
                 // Log the number of tombstones scanned on single key queries
-                metric.tombstoneScannedHistogram.update(((SliceQueryFilter) filter.filter).lastIgnored());
+                metric.tombstoneScannedHistogram.update(((SliceQueryFilter) filter.filter).lastTombstones());
                 metric.liveScannedHistogram.update(((SliceQueryFilter) filter.filter).lastLive());
             }
         }
@@ -1808,25 +1808,6 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
             public List<SSTableReader> apply(DataTracker.View view)
             {
                 return compactionStrategyWrapper.filterSSTablesForReads(view.sstablesInBounds(rowBounds));
-            }
-        };
-    }
-
-    /**
-     * @return a ViewFragment containing the sstables and memtables that may need to be merged
-     * for rows for all of @param rowBoundsCollection, inclusive, according to the interval tree.
-     */
-    public Function<DataTracker.View, List<SSTableReader>> viewFilter(final Collection<AbstractBounds<RowPosition>> rowBoundsCollection)
-    {
-        return new Function<DataTracker.View, List<SSTableReader>>()
-        {
-            public List<SSTableReader> apply(DataTracker.View view)
-            {
-                Set<SSTableReader> sstables = Sets.newHashSet();
-                for (AbstractBounds<RowPosition> rowBounds : rowBoundsCollection)
-                    sstables.addAll(view.sstablesInBounds(rowBounds));
-
-                return ImmutableList.copyOf(sstables);
             }
         };
     }
@@ -2795,7 +2776,9 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         public List<SSTableReader> apply(DataTracker.View view)
         {
             List<SSTableReader> sstables = new ArrayList<>();
-            sstables.addAll(view.compacting);
+            for (SSTableReader sstable : view.compacting)
+                if (sstable.openReason != SSTableReader.OpenReason.EARLY)
+                    sstables.add(sstable);
             for (SSTableReader sstable : view.sstables)
                 if (!view.compacting.contains(sstable) && sstable.openReason != SSTableReader.OpenReason.EARLY)
                     sstables.add(sstable);
