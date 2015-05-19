@@ -338,6 +338,7 @@ class CqlRecordWriter extends RecordWriter<Map<String, ByteBuffer>, List<ByteBuf
                             lastException = new IOException(e);
                             break outer;
                         }
+                        continue;
                     }
 
                     try
