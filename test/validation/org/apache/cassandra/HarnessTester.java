@@ -25,7 +25,10 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 
+import org.junit.Assert;
 import org.junit.Test;
 
 import com.google.common.io.ByteStreams;
@@ -47,6 +50,15 @@ public class HarnessTester
     {
         Config config = loadConfig(getConfigURL("./configs/test.yaml"));
         Module module = new SimpleWriteModule(config);
+        Future future = module.validate();
+        try
+        {
+            future.get();
+        }
+        catch (Exception e)
+        {
+            Assert.assertTrue(false);
+        }
     }
 
     public Config loadConfig(URL url)

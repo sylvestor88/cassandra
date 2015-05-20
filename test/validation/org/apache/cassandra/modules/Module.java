@@ -21,27 +21,26 @@
 
 package org.apache.cassandra.modules;
 
+import java.util.concurrent.Future;
+
 import org.apache.cassandra.concurrent.DebuggableThreadPoolExecutor;
 import org.apache.cassandra.htest.Config;
 
-public abstract class Module implements Runnable
+public abstract class Module
 {
-    public DebuggableThreadPoolExecutor executor;
-    private Config config;
-    protected boolean prepared;
+    DebuggableThreadPoolExecutor executor;
+    Config config;
 
     public Module(Config config)
     {
         this.config = config;
     }
 
-    public void run()
+    public abstract Future validate();
+
+    protected Future newTask(Runnable task)
     {
-        if (!prepared)
-        {
-            throw new RuntimeException("Module was run before being prepared.");
-        }
+        return executor.submit(task);
     }
 
-    public abstract boolean validate();
 }

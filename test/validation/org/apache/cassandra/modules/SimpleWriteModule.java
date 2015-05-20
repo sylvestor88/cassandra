@@ -20,6 +20,9 @@
  */
 package org.apache.cassandra.modules;
 
+import java.lang.Thread;
+import java.util.concurrent.Future;
+
 import com.datastax.driver.core.BoundStatement;
 import com.datastax.driver.core.Cluster;
 import com.datastax.driver.core.PreparedStatement;
@@ -30,40 +33,39 @@ import org.apache.cassandra.htest.Config;
 
 public class SimpleWriteModule extends Module
 {
-    private Session session;
 
     public SimpleWriteModule(Config config)
     {
         super(config);
-        executor = new DebuggableThreadPoolExecutor("SimpleWrite", 1);
+        executor = new DebuggableThreadPoolExecutor("SimpleWrite", Thread.NORM_PRIORITY);
     }
 
-    public void prepare()
+    public Future validate()
     {
-        Cluster cluster = Cluster.builder().addContactPoints("127.0.0.1").build();
-        session = cluster.connect();
-        session.execute("CREATE KEYSPACE k WITH replication = {'class': 'SimpleStrategy' , 'replication_factor': 1}");
-        session.execute("USE k");
-        session.execute("CREATE TABLE t ( id int PRIMARY KEY , v int)");
-        prepared = true;
+        return newTask(new ValidateTask());
     }
 
-    public void run()
+    class ValidateTask implements Runnable
     {
-        super.run();
-        PreparedStatement query = session.prepare("INSERT INTO t (id, v) VALUES (?, ?)");
-
-        for (int i = 0; i < 10000; i++)
+        public void run()
         {
-            BoundStatement bound = query.bind(i, i);
-            session.execute(bound);
+            Cluster cluster = Cluster.builder().addContactPoints("127.0.0.1").build();
+            Session session = cluster.connect();
+            session.execute("CREATE KEYSPACE k WITH replication = {'class': 'SimpleStrategy' , 'replication_factor': 1}");
+            session.execute("USE k");
+            session.execute("CREATE TABLE t ( id int PRIMARY KEY , v int)");
+
+            PreparedStatement query = session.prepare("INSERT INTO t (id, v) VALUES (?, ?)");
+
+            for (int i = 0; i < 10000; i++)
+            {
+                BoundStatement bound = query.bind(i, i);
+                session.execute(bound);
+            }
+
+            ResultSet results = session.execute("SELECT * FROM k.t");
+            //TODO: Add a way to pass messages back
+            //return results.all().size() == 10000;
         }
-
-    }
-
-    public boolean validate()
-    {
-        ResultSet results = session.execute("SELECT * FROM k.t");
-        return results.all().size() == 10000;
     }
 }
