@@ -46,6 +46,7 @@ import org.apache.cassandra.db.marshal.TypeParser;
 import org.apache.cassandra.dht.*;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.exceptions.SyntaxException;
+import org.apache.cassandra.exceptions.TransportException;
 import org.apache.cassandra.hadoop.*;
 import org.apache.cassandra.utils.*;
 import org.apache.hadoop.conf.Configuration;
@@ -214,7 +215,7 @@ class CqlRecordWriter extends RecordWriter<Map<String, ByteBuffer>, List<ByteBuf
         TokenRange range = ringCache.getRange(getPartitionKey(keyColumns));
 
         // get the client for the given range, or create a new one
-	final InetAddress address = ringCache.getEndpoints(range).get(0);
+        final InetAddress address = ringCache.getEndpoints(range).get(0);
         RangeClient client = clients.get(address);
         if (client == null)
         {
@@ -325,7 +326,7 @@ class CqlRecordWriter extends RecordWriter<Map<String, ByteBuffer>, List<ByteBuf
                         //There are too many ways for the Thread.interrupted() state to be cleared, so
                         //we can't rely on that here. Until the java driver gives us a better way of knowing
                         //that this exception came from an InterruptedException, this is the best solution.
-                        if (e instanceof DriverException && e.getMessage().contains("Connection thread interrupted"))
+                        if (canRetryDriverConnection(e))
                         {
                             iter.previous();
                         }
@@ -417,13 +418,30 @@ class CqlRecordWriter extends RecordWriter<Map<String, ByteBuffer>, List<ByteBuf
                 throw lastException;
         }
 
-
         protected void closeInternal()
         {
             if (client != null)
             {
                 client.close();;
             }
+        }
+
+        private boolean canRetryDriverConnection(Exception e)
+        {
+            if (e instanceof DriverException && e.getMessage().contains("Connection thread interrupted"))
+                return true;
+            if (e instanceof NoHostAvailableException)
+            {
+                if (((NoHostAvailableException) e).getErrors().values().size() == 1)
+                {
+                    Throwable cause = ((NoHostAvailableException) e).getErrors().values().iterator().next();
+                    if (cause != null && cause.getCause() instanceof java.nio.channels.ClosedByInterruptException)
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
         }
     }
 
