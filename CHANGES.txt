@@ -1,4 +1,7 @@
 2.1.6
+ * Consistent error message when a table mixes counter and non-counter
+   columns (CASSANDRA-9492)
+ * Avoid getting unreadable keys during anticompaction (CASSANDRA-9508)
  * (cqlsh) Better float precision by default (CASSANDRA-9224)
  * Improve estimated row count (CASSANDRA-9107)
  * Optimize range tombstone memory footprint (CASSANDRA-8603)
@@ -29,6 +32,13 @@
  * Fix streaming not holding ref when stream error (CASSANDRA-9295)
  * Fix canonical view returning early opened SSTables (CASSANDRA-9396)
 Merged from 2.0:
+ * Always mark sstable suspect when corrupted (CASSANDRA-9478)
+ * Add database users and permissions to CQL3 documentation (CASSANDRA-7558)
+ * Allow JVM_OPTS to be passed to standalone tools (CASSANDRA-5969)
+ * Fix bad condition in RangeTombstoneList (CASSANDRA-9485)
+ * Fix potential StackOverflow when setting CrcCheckChance over JMX (CASSANDRA-9488)
+ * Fix null static columns in pages after the first, paged reversed
+   queries (CASSANDRA-8502)
  * Fix counting cache serialization in request metrics (CASSANDRA-9466)
  * (cqlsh) Add LOGIN command to switch users (CASSANDRA-7212)
  * Clone SliceQueryFilter in AbstractReadCommand implementations (CASSANDRA-8940)
