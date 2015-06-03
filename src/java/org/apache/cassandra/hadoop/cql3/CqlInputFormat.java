@@ -83,12 +83,6 @@ import com.datastax.driver.core.Row;
 public class CqlInputFormat extends org.apache.hadoop.mapreduce.InputFormat<Long, Row> implements org.apache.hadoop.mapred.InputFormat<Long, Row>
 {
     public static final String MAPRED_TASK_ID = "mapred.task.id";
-    // The simple fact that we need this is because the old Hadoop API wants us to "write"
-    // to the key and value whereas the new asks for it.
-    // I choose 8kb as the default max key size (instantiated only once), but you can
-    // override it in your jobConf with this setting.
-    public static final String CASSANDRA_HADOOP_MAX_KEY_SIZE = "cassandra.hadoop.max_key_size";
-    public static final int    CASSANDRA_HADOOP_MAX_KEY_SIZE_DEFAULT = 8192;
     private static final Logger logger = LoggerFactory.getLogger(CqlInputFormat.class);
     private String keyspace;
     private String cfName;
