@@ -29,7 +29,10 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
+import java.util.Random;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadLocalRandom;
@@ -38,12 +41,11 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import junit.framework.Assert;
 
-import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.RateLimiter;
 
+import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
-
 import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.Util;
 import org.apache.cassandra.config.Config.CommitLogSync;
@@ -53,7 +55,6 @@ import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.Cell;
 import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.db.ColumnSerializer;
-import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.db.Mutation;
 import org.apache.cassandra.io.util.FastByteArrayInputStream;
 
@@ -110,7 +111,7 @@ public class CommitLogStressTest
             CommitLogStressTest tester = new CommitLogStressTest();
             tester.testFixedSize();
         }
-        catch (Exception e)
+        catch (Throwable e)
         {
             e.printStackTrace(System.err);
         }
@@ -139,7 +140,11 @@ public class CommitLogStressTest
 
         SchemaLoader.loadSchema();
         SchemaLoader.schemaDefinition(""); // leave def. blank to maintain old behaviour
-
+    }
+    
+    @Before
+    public void cleanDir()
+    {
         File dir = new File(location);
         if (dir.isDirectory())
         {
@@ -156,7 +161,7 @@ public class CommitLogStressTest
     @Test
     public void testRandomSize() throws Exception
     {
-        randomSize = false;
+        randomSize = true;
         discardedRun = false;
         testAllLogConfigs();
     }
@@ -202,7 +207,7 @@ public class CommitLogStressTest
     }
 
     public void testLog(CommitLog commitLog) throws IOException, InterruptedException {
-        System.out.format("\nTesting commit log size %dmb, compressor %s, sync %s%s%s\n",
+        System.out.format("\nTesting commit log size %.0fmb, compressor %s, sync %s%s%s\n",
                            mb(DatabaseDescriptor.getCommitLogSegmentSize()),
                            commitLog.compressor != null ? commitLog.compressor.getClass().getSimpleName() : "none",
                            commitLog.executor.getClass().getSimpleName(),
@@ -224,13 +229,16 @@ public class CommitLogStressTest
             for (CommitlogExecutor t: threads)
             {
                 t.join();
-                CommitLog.instance.discardCompletedSegments( Schema.instance.getCFMetaData("Keyspace1", "Standard1").cfId, t.rp);
                 if (t.rp.compareTo(discardedPos) > 0)
                     discardedPos = t.rp;
             }
+            verifySizes(commitLog);
+
+            commitLog.discardCompletedSegments(Schema.instance.getCFMetaData("Keyspace1", "Standard1").cfId, discardedPos);
             threads.clear();
             System.out.format("Discarded at %s\n", discardedPos);
-
+            verifySizes(commitLog);
+            
             scheduled = startThreads(commitLog, threads);
         }
 
@@ -247,6 +255,7 @@ public class CommitLogStressTest
             hash += t.hash;
             cells += t.cells;
         }
+        verifySizes(commitLog);
         
         commitLog.shutdownBlocking();
 
@@ -268,11 +277,43 @@ public class CommitLogStressTest
         }
     }
 
-    public ScheduledExecutorService startThreads(CommitLog commitLog, final List<CommitlogExecutor> threads)
+    private void verifySizes(CommitLog commitLog)
+    {
+        // Complete anything that's still left to write.
+        commitLog.executor.requestExtraSync().awaitUninterruptibly();
+        // One await() does not suffice as we may be signalled when an ongoing sync finished. Request another
+        // (which shouldn't write anything) to make sure the first we triggered completes.
+        // FIXME: The executor should give us a chance to await completion of the sync we requested.
+        commitLog.executor.requestExtraSync().awaitUninterruptibly();
+        // Wait for any pending deletes or segment allocations to complete.
+        commitLog.allocator.awaitManagementTasksCompletion();
+        
+        long combinedSize = 0;
+        for (File f : new File(commitLog.location).listFiles())
+            combinedSize += f.length();
+        Assert.assertEquals(combinedSize, commitLog.getActiveOnDiskSize());
+
+        List<String> logFileNames = commitLog.getActiveSegmentNames();
+        Map<String, Double> ratios = commitLog.getActiveSegmentCompressionRatios();
+        Collection<CommitLogSegment> segments = commitLog.allocator.getActiveSegments();
+
+        for (CommitLogSegment segment: segments)
+        {
+            Assert.assertTrue(logFileNames.remove(segment.getName()));
+            Double ratio = ratios.remove(segment.getName());
+            
+            Assert.assertEquals(segment.logFile.length(), segment.onDiskSize());
+            Assert.assertEquals(segment.onDiskSize() * 1.0 / segment.contentSize(), ratio, 0.01);
+        }
+        Assert.assertTrue(logFileNames.isEmpty());
+        Assert.assertTrue(ratios.isEmpty());
+    }
+
+    public ScheduledExecutorService startThreads(final CommitLog commitLog, final List<CommitlogExecutor> threads)
     {
         stop = false;
         for (int ii = 0; ii < NUM_THREADS; ii++) {
-            final CommitlogExecutor t = new CommitlogExecutor(commitLog);
+            final CommitlogExecutor t = new CommitlogExecutor(commitLog, new Random(ii));
             threads.add(t);
             t.start();
         }
@@ -283,9 +324,9 @@ public class CommitLogStressTest
 
             public void run() {
               Runtime runtime = Runtime.getRuntime();
-              long maxMemory = mb(runtime.maxMemory());
-              long allocatedMemory = mb(runtime.totalMemory());
-              long freeMemory = mb(runtime.freeMemory());
+              long maxMemory = runtime.maxMemory();
+              long allocatedMemory = runtime.totalMemory();
+              long freeMemory = runtime.freeMemory();
               long temp = 0;
               long sz = 0;
               for (CommitlogExecutor cle : threads) {
@@ -294,9 +335,11 @@ public class CommitLogStressTest
               }
               double time = (System.currentTimeMillis() - start) / 1000.0;
               double avg = (temp / time);
-              System.out.println(String.format("second %d mem max %dmb allocated %dmb free %dmb mutations %d since start %d avg %.3f transfer %.3fmb",
+              System.out.println(
+                      String.format("second %d mem max %.0fmb allocated %.0fmb free %.0fmb mutations %d since start %d avg %.3f content %.1fmb ondisk %.1fmb transfer %.3fmb",
                       ((System.currentTimeMillis() - start) / 1000),
-                      maxMemory, allocatedMemory, freeMemory, (temp - lastUpdate), lastUpdate, avg, mb(sz / time)));
+                      mb(maxMemory), mb(allocatedMemory), mb(freeMemory), (temp - lastUpdate), lastUpdate, avg,
+                      mb(commitLog.getActiveContentSize()), mb(commitLog.getActiveOnDiskSize()), mb(sz / time)));
               lastUpdate = temp;
             }
         };
@@ -305,15 +348,15 @@ public class CommitLogStressTest
         return scheduled;
     }
 
-    private static long mb(long maxMemory) {
-        return maxMemory / (1024 * 1024);
+    private static double mb(long maxMemory) {
+        return maxMemory / (1024.0 * 1024);
     }
 
     private static double mb(double maxMemory) {
         return maxMemory / (1024 * 1024);
     }
 
-    public static ByteBuffer randomBytes(int quantity, ThreadLocalRandom tlr) {
+    public static ByteBuffer randomBytes(int quantity, Random tlr) {
         ByteBuffer slice = ByteBuffer.allocate(quantity);
         ByteBuffer source = dataSource.duplicate();
         source.position(tlr.nextInt(source.capacity() - quantity));
@@ -329,27 +372,29 @@ public class CommitLogStressTest
         int cells = 0;
         int dataSize = 0;
         final CommitLog commitLog;
+        final Random random;
 
         volatile ReplayPosition rp;
 
-        public CommitlogExecutor(CommitLog commitLog)
+        public CommitlogExecutor(CommitLog commitLog, Random rand)
         {
             this.commitLog = commitLog;
+            this.random = rand;
         }
 
         public void run() {
             RateLimiter rl = rateLimit != 0 ? RateLimiter.create(rateLimit) : null;
-            final ThreadLocalRandom tlr = ThreadLocalRandom.current();
+            final Random rand = random != null ? random : ThreadLocalRandom.current();
             while (!stop) {
                 if (rl != null)
                     rl.acquire();
                 String ks = "Keyspace1";
-                ByteBuffer key = randomBytes(16, tlr);
+                ByteBuffer key = randomBytes(16, rand);
                 Mutation mutation = new Mutation(ks, key);
 
                 for (int ii = 0; ii < numCells; ii++) {
-                    int sz = randomSize ? tlr.nextInt(cellSize) : cellSize;
-                    ByteBuffer bytes = randomBytes(sz, tlr);
+                    int sz = randomSize ? rand.nextInt(cellSize) : cellSize;
+                    ByteBuffer bytes = randomBytes(sz, rand);
                     mutation.add("Standard1", Util.cellname("name" + ii), bytes,
                             System.currentTimeMillis());
                     hash = hash(hash, bytes);

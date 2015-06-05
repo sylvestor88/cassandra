@@ -25,7 +25,6 @@ import java.util.Collections;
 import java.util.Random;
 
 import org.junit.Test;
-
 import org.apache.cassandra.db.composites.SimpleDenseCellNameType;
 import org.apache.cassandra.db.marshal.BytesType;
 import org.apache.cassandra.exceptions.ConfigurationException;
@@ -35,6 +34,7 @@ import org.apache.cassandra.io.util.ChannelProxy;
 import org.apache.cassandra.io.util.FileMark;
 import org.apache.cassandra.io.util.RandomAccessReader;
 import org.apache.cassandra.io.util.SequentialWriter;
+import org.apache.cassandra.utils.SyncUtil;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
@@ -110,7 +110,7 @@ public class CompressedRandomAccessReaderTest
             MetadataCollector sstableMetadataCollector = new MetadataCollector(new SimpleDenseCellNameType(BytesType.instance)).replayPosition(null);
             SequentialWriter writer = compressed
                 ? new CompressedSequentialWriter(f, filename + ".metadata", new CompressionParameters(SnappyCompressor.instance), sstableMetadataCollector)
-                : new SequentialWriter(f, CompressionParameters.DEFAULT_CHUNK_LENGTH, false);
+                : SequentialWriter.open(f);
 
             writer.write("The quick ".getBytes());
             FileMark mark = writer.mark();
@@ -196,7 +196,7 @@ public class CompressedRandomAccessReaderTest
             for (int i = 0; i < checksum.length; i++)
             {
                 checksumModifier.write(random.nextInt());
-                checksumModifier.getFD().sync(); // making sure that change was synced with disk
+                SyncUtil.sync(checksumModifier); // making sure that change was synced with disk
 
                 final RandomAccessReader r = CompressedRandomAccessReader.open(channel, meta);
 
@@ -238,6 +238,6 @@ public class CompressedRandomAccessReaderTest
     {
         file.seek(checksumOffset);
         file.write(checksum);
-        file.getFD().sync();
+        SyncUtil.sync(file);
     }
 }

@@ -70,11 +70,11 @@ public final class SystemKeyspace
     // Used to indicate that there was a previous version written to the legacy (pre 1.2)
     // system.Versions table, but that we cannot read it. Suffice to say, any upgrade should
     // proceed through 1.2.x before upgrading to the current version.
-    public static final SemanticVersion UNREADABLE_VERSION = new SemanticVersion("0.0.0-unknown");
+    public static final CassandraVersion UNREADABLE_VERSION = new CassandraVersion("0.0.0-unknown");
 
     // Used to indicate that no previous version information was found. When encountered, we assume that
     // Cassandra was not previously installed and we're in the process of starting a fresh node.
-    public static final SemanticVersion NULL_VERSION = new SemanticVersion("0.0.0-absent");
+    public static final CassandraVersion NULL_VERSION = new CassandraVersion("0.0.0-absent");
 
     public static final String NAME = "system";
 
@@ -147,6 +147,7 @@ public final class SystemKeyspace
                 "CREATE TABLE %s ("
                 + "key text,"
                 + "bootstrapped text,"
+                + "broadcast_address inet,"
                 + "cluster_name text,"
                 + "cql_version text,"
                 + "data_center text,"
@@ -156,6 +157,7 @@ public final class SystemKeyspace
                 + "partitioner text,"
                 + "rack text,"
                 + "release_version text,"
+                + "rpc_address inet,"
                 + "schema_version uuid,"
                 + "thrift_version text,"
                 + "tokens set<varchar>,"
@@ -281,7 +283,8 @@ public final class SystemKeyspace
     {
         NEEDS_BOOTSTRAP,
         COMPLETED,
-        IN_PROGRESS
+        IN_PROGRESS,
+        DECOMMISSIONED
     }
 
     private static DecoratedKey decorate(ByteBuffer key)
@@ -291,23 +294,25 @@ public final class SystemKeyspace
 
     public static void finishStartup()
     {
-        setupVersion();
+        persistLocalMetadata();
         LegacySchemaTables.saveSystemKeyspaceSchema();
     }
 
-    private static void setupVersion()
+    private static void persistLocalMetadata()
     {
         String req = "INSERT INTO system.%s (" +
-                     "  key, " +
-                     "  cluster_name, " +
-                     "  release_version, " +
-                     "  cql_version, " +
-                     "  thrift_version, " +
-                     "  native_protocol_version, " +
-                     "  data_center, " +
-                     "  rack, " +
-                     "  partitioner" +
-                     ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                     "key," +
+                     "cluster_name," +
+                     "release_version," +
+                     "cql_version," +
+                     "thrift_version," +
+                     "native_protocol_version," +
+                     "data_center," +
+                     "rack," +
+                     "partitioner," +
+                     "rpc_address," +
+                     "broadcast_address" +
+                     ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         IEndpointSnitch snitch = DatabaseDescriptor.getEndpointSnitch();
         executeOnceInternal(String.format(req, LOCAL),
                             LOCAL,
@@ -318,7 +323,9 @@ public final class SystemKeyspace
                             String.valueOf(Server.CURRENT_VERSION),
                             snitch.getDatacenter(FBUtilities.getBroadcastAddress()),
                             snitch.getRack(FBUtilities.getBroadcastAddress()),
-                            DatabaseDescriptor.getPartitioner().getClass().getName());
+                            DatabaseDescriptor.getPartitioner().getClass().getName(),
+                            DatabaseDescriptor.getRpcAddress(),
+                            FBUtilities.getBroadcastAddress());
     }
 
     /**
@@ -437,17 +444,16 @@ public final class SystemKeyspace
 
     private static Map<UUID, ByteBuffer> truncationAsMapEntry(ColumnFamilyStore cfs, long truncatedAt, ReplayPosition position)
     {
-        DataOutputBuffer out = new DataOutputBuffer();
-        try
+        try (DataOutputBuffer out = new DataOutputBuffer())
         {
             ReplayPosition.serializer.serialize(position, out);
             out.writeLong(truncatedAt);
+            return Collections.singletonMap(cfs.metadata.cfId, ByteBuffer.wrap(out.getData(), 0, out.getLength()));
         }
         catch (IOException e)
         {
             throw new RuntimeException(e);
         }
-        return Collections.singletonMap(cfs.metadata.cfId, ByteBuffer.wrap(out.getData(), 0, out.getLength()));
     }
 
     public static ReplayPosition getTruncatedPosition(UUID cfId)
@@ -679,19 +685,19 @@ public final class SystemKeyspace
      * @param ep endpoint address to check
      * @return Release version or null if version is unknown.
      */
-    public static SemanticVersion getReleaseVersion(InetAddress ep)
+    public static CassandraVersion getReleaseVersion(InetAddress ep)
     {
         try
         {
             if (FBUtilities.getBroadcastAddress().equals(ep))
             {
-                return new SemanticVersion(FBUtilities.getReleaseVersionString());
+                return new CassandraVersion(FBUtilities.getReleaseVersionString());
             }
             String req = "SELECT release_version FROM system.%s WHERE peer=?";
             UntypedResultSet result = executeInternal(String.format(req, PEERS), ep);
             if (result != null && result.one().has("release_version"))
             {
-                return new SemanticVersion(result.one().getString("release_version"));
+                return new CassandraVersion(result.one().getString("release_version"));
             }
             // version is unknown
             return null;
@@ -809,6 +815,11 @@ public final class SystemKeyspace
     public static boolean bootstrapInProgress()
     {
         return getBootstrapState() == BootstrapState.IN_PROGRESS;
+    }
+
+    public static boolean wasDecommissioned()
+    {
+        return getBootstrapState() == BootstrapState.DECOMMISSIONED;
     }
 
     public static void setBootstrapState(BootstrapState state)
@@ -1116,9 +1127,8 @@ public final class SystemKeyspace
 
     private static ByteBuffer rangeToBytes(Range<Token> range)
     {
-        try
+        try (DataOutputBuffer out = new DataOutputBuffer())
         {
-            DataOutputBuffer out = new DataOutputBuffer();
             Range.tokenSerializer.serialize(range, out, MessagingService.VERSION_22);
             return out.buffer();
         }

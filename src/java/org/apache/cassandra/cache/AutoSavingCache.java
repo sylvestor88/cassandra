@@ -42,6 +42,7 @@ import org.apache.cassandra.io.util.*;
 import org.apache.cassandra.service.CacheService;
 import org.apache.cassandra.utils.JVMStabilityInspector;
 import org.apache.cassandra.utils.Pair;
+import org.apache.cassandra.utils.UUIDGen;
 
 public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K, V>
 {
@@ -210,7 +211,8 @@ public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K
                                       type,
                                       0,
                                       keysEstimate,
-                                      "keys");
+                                      "keys",
+                                      UUIDGen.getTimeUUID());
         }
 
         public CacheService.CacheType cacheType()
@@ -225,6 +227,7 @@ public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K
             return info.forProgress(keysWritten, Math.max(keysWritten, keysEstimate));
         }
 
+        @SuppressWarnings("resource")
         public void saveCache()
         {
             logger.debug("Deleting old {} files.", cacheType);

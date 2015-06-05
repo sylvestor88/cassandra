@@ -27,6 +27,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
+import com.google.common.annotations.VisibleForTesting;
+
+import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.sstable.format.SSTableWriter;
@@ -46,7 +49,7 @@ import org.apache.cassandra.utils.*;
 import org.apache.cassandra.utils.concurrent.OpOrder;
 import org.apache.cassandra.utils.memory.*;
 
-public class Memtable
+public class Memtable implements Comparable<Memtable>
 {
     private static final Logger logger = LoggerFactory.getLogger(Memtable.class);
 
@@ -63,6 +66,11 @@ public class Memtable
     private volatile AtomicReference<ReplayPosition> lastReplayPosition;
     // the "first" ReplayPosition owned by this Memtable; this is inaccurate, and only used as a convenience to prevent CLSM flushing wantonly
     private final ReplayPosition minReplayPosition = CommitLog.instance.getContext();
+
+    public int compareTo(Memtable that)
+    {
+        return this.minReplayPosition.compareTo(that.minReplayPosition);
+    }
 
     public static final class LastReplayPosition extends ReplayPosition
     {
@@ -92,6 +100,15 @@ public class Memtable
         this.cfs.scheduleFlush();
     }
 
+    // ONLY to be used for testing, to create a mock Memtable
+    @VisibleForTesting
+    public Memtable(CFMetaData metadata)
+    {
+        this.initialComparator = metadata.comparator;
+        this.cfs = null;
+        this.allocator = null;
+    }
+
     public MemtableAllocator getAllocator()
     {
         return allocator;
@@ -107,7 +124,8 @@ public class Memtable
         return currentOperations.get();
     }
 
-    void setDiscarding(OpOrder.Barrier writeBarrier, AtomicReference<ReplayPosition> lastReplayPosition)
+    @VisibleForTesting
+    public void setDiscarding(OpOrder.Barrier writeBarrier, AtomicReference<ReplayPosition> lastReplayPosition)
     {
         assert this.writeBarrier == null;
         this.lastReplayPosition = lastReplayPosition;
@@ -223,6 +241,11 @@ public class Memtable
         }
         builder.append("}");
         return builder.toString();
+    }
+
+    public int partitionCount()
+    {
+        return rows.size();
     }
 
     public FlushRunnable flushRunnable()
@@ -400,19 +423,21 @@ public class Memtable
     private static int estimateRowOverhead(final int count)
     {
         // calculate row overhead
-        final OpOrder.Group group = new OpOrder().start();
-        int rowOverhead;
-        MemtableAllocator allocator = MEMORY_POOL.newAllocator();
-        ConcurrentNavigableMap<RowPosition, Object> rows = new ConcurrentSkipListMap<>();
-        final Object val = new Object();
-        for (int i = 0 ; i < count ; i++)
-            rows.put(allocator.clone(new BufferDecoratedKey(new LongToken(i), ByteBufferUtil.EMPTY_BYTE_BUFFER), group), val);
-        double avgSize = ObjectSizes.measureDeep(rows) / (double) count;
-        rowOverhead = (int) ((avgSize - Math.floor(avgSize)) < 0.05 ? Math.floor(avgSize) : Math.ceil(avgSize));
-        rowOverhead -= ObjectSizes.measureDeep(new LongToken(0));
-        rowOverhead += AtomicBTreeColumns.EMPTY_SIZE;
-        allocator.setDiscarding();
-        allocator.setDiscarded();
-        return rowOverhead;
+        try (final OpOrder.Group group = new OpOrder().start())
+        {
+            int rowOverhead;
+            MemtableAllocator allocator = MEMORY_POOL.newAllocator();
+            ConcurrentNavigableMap<RowPosition, Object> rows = new ConcurrentSkipListMap<>();
+            final Object val = new Object();
+            for (int i = 0; i < count; i++)
+                rows.put(allocator.clone(new BufferDecoratedKey(new LongToken(i), ByteBufferUtil.EMPTY_BYTE_BUFFER), group), val);
+            double avgSize = ObjectSizes.measureDeep(rows) / (double) count;
+            rowOverhead = (int) ((avgSize - Math.floor(avgSize)) < 0.05 ? Math.floor(avgSize) : Math.ceil(avgSize));
+            rowOverhead -= ObjectSizes.measureDeep(new LongToken(0));
+            rowOverhead += AtomicBTreeColumns.EMPTY_SIZE;
+            allocator.setDiscarding();
+            allocator.setDiscarded();
+            return rowOverhead;
+        }
     }
 }

@@ -26,29 +26,18 @@ import java.util.concurrent.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-
-import com.datastax.driver.core.exceptions.AuthenticationException;
-import com.datastax.driver.core.exceptions.InvalidQueryException;
-import com.datastax.driver.core.exceptions.NoHostAvailableException;
-import com.datastax.driver.core.BoundStatement;
-import com.datastax.driver.core.ColumnMetadata;
-import com.datastax.driver.core.Host;
-import com.datastax.driver.core.Metadata;
-import com.datastax.driver.core.PreparedStatement;
-import com.datastax.driver.core.Session;
-import com.datastax.driver.core.TableMetadata;
-import com.datastax.driver.core.TokenRange;
-import org.apache.cassandra.db.marshal.AbstractType;
+import com.datastax.driver.core.*;
+import com.datastax.driver.core.exceptions.*;
 import org.apache.cassandra.db.marshal.CompositeType;
-import org.apache.cassandra.db.marshal.LongType;
-import org.apache.cassandra.db.marshal.TypeParser;
-import org.apache.cassandra.dht.*;
-import org.apache.cassandra.exceptions.ConfigurationException;
-import org.apache.cassandra.exceptions.SyntaxException;
-import org.apache.cassandra.hadoop.*;
-import org.apache.cassandra.utils.*;
+import org.apache.cassandra.dht.IPartitioner;
+import org.apache.cassandra.dht.Token;
+import org.apache.cassandra.hadoop.ColumnFamilyOutputFormat;
+import org.apache.cassandra.hadoop.ConfigHelper;
+import org.apache.cassandra.hadoop.HadoopCompat;
+import org.apache.cassandra.utils.FBUtilities;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.mapreduce.*;
+import org.apache.hadoop.mapreduce.RecordWriter;
+import org.apache.hadoop.mapreduce.TaskAttemptContext;
 import org.apache.hadoop.util.Progressable;
 
 /**
@@ -127,24 +116,24 @@ class CqlRecordWriter extends RecordWriter<Map<String, ByteBuffer>, List<ByteBuf
         try
         {
             String keyspace = ConfigHelper.getOutputKeyspace(conf);
-            Session client = CqlConfigHelper.getOutputCluster(ConfigHelper.getOutputInitialAddress(conf), conf).connect(keyspace);
-            ringCache = new NativeRingCache(conf);
-            if (client != null)
+            try (Session client = CqlConfigHelper.getOutputCluster(ConfigHelper.getOutputInitialAddress(conf), conf).connect(keyspace))
             {
-                TableMetadata tableMetadata = client.getCluster().getMetadata().getKeyspace(client.getLoggedKeyspace()).getTable(ConfigHelper.getOutputColumnFamily(conf));
-                clusterColumns = tableMetadata.getClusteringColumns();
-                partitionKeyColumns = tableMetadata.getPartitionKey();
+                ringCache = new NativeRingCache(conf);
+                if (client != null)
+                {
+                    TableMetadata tableMetadata = client.getCluster().getMetadata().getKeyspace(client.getLoggedKeyspace()).getTable(ConfigHelper.getOutputColumnFamily(conf));
+                    clusterColumns = tableMetadata.getClusteringColumns();
+                    partitionKeyColumns = tableMetadata.getPartitionKey();
 
-                String cqlQuery = CqlConfigHelper.getOutputCql(conf).trim();
-                if (cqlQuery.toLowerCase().startsWith("insert"))
-                    throw new UnsupportedOperationException("INSERT with CqlRecordWriter is not supported, please use UPDATE/DELETE statement");
-                cql = appendKeyWhereClauses(cqlQuery);
-
-                client.close();
-            }
-            else
-            {
-                throw new IllegalArgumentException("Invalid configuration specified " + conf);
+                    String cqlQuery = CqlConfigHelper.getOutputCql(conf).trim();
+                    if (cqlQuery.toLowerCase().startsWith("insert"))
+                        throw new UnsupportedOperationException("INSERT with CqlRecordWriter is not supported, please use UPDATE/DELETE statement");
+                    cql = appendKeyWhereClauses(cqlQuery);
+                }
+                else
+                {
+                    throw new IllegalArgumentException("Invalid configuration specified " + conf);
+                }
             }
         }
         catch (Exception e)
@@ -213,7 +202,7 @@ class CqlRecordWriter extends RecordWriter<Map<String, ByteBuffer>, List<ByteBuf
         TokenRange range = ringCache.getRange(getPartitionKey(keyColumns));
 
         // get the client for the given range, or create a new one
-	final InetAddress address = ringCache.getEndpoints(range).get(0);
+        final InetAddress address = ringCache.getEndpoints(range).get(0);
         RangeClient client = clients.get(address);
         if (client == null)
         {
@@ -321,8 +310,11 @@ class CqlRecordWriter extends RecordWriter<Map<String, ByteBuffer>, List<ByteBuf
                     catch (Exception e)
                     {
                         //If connection died due to Interrupt, just try connecting to the endpoint again.
-                        if (Thread.interrupted()) {
-                            lastException = new IOException(e);
+                        //There are too many ways for the Thread.interrupted() state to be cleared, so
+                        //we can't rely on that here. Until the java driver gives us a better way of knowing
+                        //that this exception came from an InterruptedException, this is the best solution.
+                        if (canRetryDriverConnection(e))
+                        {
                             iter.previous();
                         }
                         closeInternal();
@@ -334,6 +326,7 @@ class CqlRecordWriter extends RecordWriter<Map<String, ByteBuffer>, List<ByteBuf
                             lastException = new IOException(e);
                             break outer;
                         }
+                        continue;
                     }
 
                     try
@@ -412,13 +405,30 @@ class CqlRecordWriter extends RecordWriter<Map<String, ByteBuffer>, List<ByteBuf
                 throw lastException;
         }
 
-
         protected void closeInternal()
         {
             if (client != null)
             {
                 client.close();;
             }
+        }
+
+        private boolean canRetryDriverConnection(Exception e)
+        {
+            if (e instanceof DriverException && e.getMessage().contains("Connection thread interrupted"))
+                return true;
+            if (e instanceof NoHostAvailableException)
+            {
+                if (((NoHostAvailableException) e).getErrors().values().size() == 1)
+                {
+                    Throwable cause = ((NoHostAvailableException) e).getErrors().values().iterator().next();
+                    if (cause != null && cause.getCause() instanceof java.nio.channels.ClosedByInterruptException)
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
         }
     }
 
@@ -479,13 +489,15 @@ class CqlRecordWriter extends RecordWriter<Map<String, ByteBuffer>, List<ByteBuf
         private void refreshEndpointMap()
         {
             String keyspace = ConfigHelper.getOutputKeyspace(conf);
-            Session session = CqlConfigHelper.getOutputCluster(ConfigHelper.getOutputInitialAddress(conf), conf).connect(keyspace);
-            rangeMap = new HashMap<>();
-            metadata = session.getCluster().getMetadata();
-            Set<TokenRange> ranges = metadata.getTokenRanges();
-            for (TokenRange range : ranges)
+            try (Session session = CqlConfigHelper.getOutputCluster(ConfigHelper.getOutputInitialAddress(conf), conf).connect(keyspace))
             {
-                rangeMap.put(range, metadata.getReplicas(keyspace, range));
+                rangeMap = new HashMap<>();
+                metadata = session.getCluster().getMetadata();
+                Set<TokenRange> ranges = metadata.getTokenRanges();
+                for (TokenRange range : ranges)
+                {
+                    rangeMap.put(range, metadata.getReplicas(keyspace, range));
+                }
             }
         }
 

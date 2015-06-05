@@ -150,6 +150,11 @@ public abstract class AbstractType<T> implements Comparator<ByteBuffer>
         return false;
     }
 
+    public boolean isFrozenCollection()
+    {
+        return isCollection() && !isMultiCell();
+    }
+
     public static AbstractType<?> parseDefaultParameters(AbstractType<?> baseType, TypeParser parser) throws SyntaxException
     {
         Map<String, String> parameters = parser.getKeyValueParameters();
@@ -249,6 +254,14 @@ public abstract class AbstractType<T> implements Comparator<ByteBuffer>
     public AbstractType<?> freeze()
     {
         return this;
+    }
+
+    /**
+     * Returns {@code true} for types where empty should be handled like {@code null} like {@link Int32Type}.
+     */
+    public boolean isEmptyValueMeaningless()
+    {
+        return false;
     }
 
     /**

@@ -193,11 +193,16 @@ public class LegacySchemaTables
     public static void saveSystemKeyspaceSchema()
     {
         KSMetaData keyspace = Schema.instance.getKSMetaData(SystemKeyspace.NAME);
+        long timestamp = FBUtilities.timestampMicros();
         // delete old, possibly obsolete entries in schema tables
         for (String table : ALL)
-            executeOnceInternal(String.format("DELETE FROM system.%s WHERE keyspace_name = ?", table), keyspace.name);
+        {
+            executeOnceInternal(String.format("DELETE FROM system.%s USING TIMESTAMP ? WHERE keyspace_name = ?", table),
+                                timestamp,
+                                keyspace.name);
+        }
         // (+1 to timestamp to make sure we don't get shadowed by the tombstones we just added)
-        makeCreateKeyspaceMutation(keyspace, FBUtilities.timestampMicros() + 1).apply();
+        makeCreateKeyspaceMutation(keyspace, timestamp + 1).apply();
     }
 
     public static Collection<KSMetaData> readSchemaFromSystemTables()
@@ -1336,6 +1341,26 @@ public class LegacySchemaTables
         String language = row.getString("language");
         String body = row.getString("body");
         boolean calledOnNullInput = row.getBoolean("called_on_null_input");
+
+        org.apache.cassandra.cql3.functions.Function existing = org.apache.cassandra.cql3.functions.Functions.find(name, argTypes);
+        if (existing instanceof UDFunction)
+        {
+            // This check prevents duplicate compilation of effectively the same UDF.
+            // Duplicate compilation attempts can occur on the coordinator node handling the CREATE FUNCTION
+            // statement, since CreateFunctionStatement needs to execute UDFunction.create but schema migration
+            // also needs that (since it needs to handle its own change).
+            UDFunction udf = (UDFunction) existing;
+            if (udf.argNames().equals(argNames) && // arg types checked in Functions.find call
+                udf.returnType().equals(returnType) &&
+                !udf.isAggregate() &&
+                udf.language().equals(language) &&
+                udf.body().equals(body) &&
+                udf.isCalledOnNullInput() == calledOnNullInput)
+            {
+                logger.debug("Skipping duplicate compilation of already existing UDF {}", name);
+                return udf;
+            }
+        }
 
         try
         {

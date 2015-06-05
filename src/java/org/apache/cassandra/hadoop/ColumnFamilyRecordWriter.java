@@ -112,7 +112,7 @@ final class ColumnFamilyRecordWriter extends RecordWriter<ByteBuffer, List<Mutat
      * @param context the context of the task
      * @throws IOException
      */
-    public void close(TaskAttemptContext context) throws IOException, InterruptedException
+    public void close(TaskAttemptContext context) throws IOException
     {
         close();
     }
@@ -249,6 +249,7 @@ final class ColumnFamilyRecordWriter extends RecordWriter<ByteBuffer, List<Mutat
                 throw lastException;
         }
 
+        @SuppressWarnings("resource")
         protected void closeInternal()
         {
             if (client != null)

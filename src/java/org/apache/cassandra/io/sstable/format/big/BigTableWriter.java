@@ -51,6 +51,7 @@ import org.apache.cassandra.utils.StreamingHistogram;
 import org.apache.cassandra.utils.concurrent.Transactional;
 
 import static org.apache.cassandra.utils.Throwables.merge;
+import org.apache.cassandra.utils.SyncUtil;
 
 public class BigTableWriter extends SSTableWriter
 {
@@ -284,6 +285,7 @@ public class BigTableWriter extends SSTableWriter
         return link;
     }
 
+    @SuppressWarnings("resource")
     public SSTableReader openEarly()
     {
         // find the max (exclusive) readable key
@@ -317,6 +319,7 @@ public class BigTableWriter extends SSTableWriter
         return openFinal(makeTmpLinks(), SSTableReader.OpenReason.EARLY);
     }
 
+    @SuppressWarnings("resource")
     private SSTableReader openFinal(Descriptor desc, SSTableReader.OpenReason openReason)
     {
         if (maxDataAge < 0)
@@ -377,7 +380,8 @@ public class BigTableWriter extends SSTableWriter
             return accumulate;
         }
 
-        protected Throwable doCleanup(Throwable accumulate)
+        @Override
+        protected Throwable doPreCleanup(Throwable accumulate)
         {
             accumulate = dbuilder.close(accumulate);
             return accumulate;
@@ -505,15 +509,13 @@ public class BigTableWriter extends SSTableWriter
             if (components.contains(Component.FILTER))
             {
                 String path = descriptor.filenameFor(Component.FILTER);
-                try
+                try (FileOutputStream fos = new FileOutputStream(path);
+                     DataOutputStreamPlus stream = new BufferedDataOutputStreamPlus(fos))
                 {
                     // bloom filter
-                    FileOutputStream fos = new FileOutputStream(path);
-                    DataOutputStreamPlus stream = new BufferedDataOutputStreamPlus(fos);
                     FilterFactory.serialize(bf, stream);
                     stream.flush();
-                    fos.getFD().sync();
-                    stream.close();
+                    SyncUtil.sync(fos);
                 }
                 catch (IOException e)
                 {
@@ -562,7 +564,8 @@ public class BigTableWriter extends SSTableWriter
             return indexFile.abort(accumulate);
         }
 
-        protected Throwable doCleanup(Throwable accumulate)
+        @Override
+        protected Throwable doPreCleanup(Throwable accumulate)
         {
             accumulate = summary.close(accumulate);
             accumulate = bf.close(accumulate);

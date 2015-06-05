@@ -347,10 +347,8 @@ public class FBUtilities
 
     public static String getReleaseVersionString()
     {
-        InputStream in = null;
-        try
+        try (InputStream in = FBUtilities.class.getClassLoader().getResourceAsStream("org/apache/cassandra/config/version.properties"))
         {
-            in = FBUtilities.class.getClassLoader().getResourceAsStream("org/apache/cassandra/config/version.properties");
             if (in == null)
             {
                 return System.getProperty("cassandra.releaseVersion", "Unknown");
@@ -364,10 +362,6 @@ public class FBUtilities
             JVMStabilityInspector.inspectThrowable(e);
             logger.warn("Unable to load version.properties", e);
             return "debug version";
-        }
-        finally
-        {
-            FileUtils.closeQuietly(in);
         }
     }
 
@@ -638,7 +632,7 @@ public class FBUtilities
         }
     }
 
-    private static final ThreadLocal<byte[]> localDigestBuffer = new ThreadLocal<byte[]>()
+    private static final ThreadLocal<byte[]> threadLocalScratchBuffer = new ThreadLocal<byte[]>()
     {
         @Override
         protected byte[] initialValue()
@@ -646,6 +640,11 @@ public class FBUtilities
             return new byte[CompressionParameters.DEFAULT_CHUNK_LENGTH];
         }
     };
+
+    public static byte[] getThreadLocalScratchBuffer()
+    {
+        return threadLocalScratchBuffer.get();
+    }
 
     //Java 7 has this method but it's private till Java 8. Thanks JDK!
     public static boolean supportsDirectChecksum()
@@ -674,7 +673,7 @@ public class FBUtilities
         }
 
         //Fallback
-        byte[] buffer = localDigestBuffer.get();
+        byte[] buffer = getThreadLocalScratchBuffer();
 
         int remaining;
         while ((remaining = bb.remaining()) > 0)
@@ -713,10 +712,10 @@ public class FBUtilities
 
     public static <T> byte[] serialize(T object, IVersionedSerializer<T> serializer, int version)
     {
-        try
+        int size = (int) serializer.serializedSize(object, version);
+
+        try (DataOutputBuffer buffer = new DataOutputBufferFixed(size))
         {
-            int size = (int) serializer.serializedSize(object, version);
-            DataOutputBuffer buffer = new DataOutputBufferFixed(size);
             serializer.serialize(object, buffer, version);
             assert buffer.getLength() == size && buffer.getData().length == size
                 : String.format("Final buffer length %s to accommodate data size of %s (predicted %s) for %s",

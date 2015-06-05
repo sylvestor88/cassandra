@@ -47,7 +47,10 @@ import org.apache.cassandra.utils.JVMStabilityInspector;
  * created (and the buffer be reseted).
  *
  * @see AbstractSSTableSimpleWriter
+ *
+ * @deprecated this class is depracted in favor of {@link CQLSSTableWriter}.
  */
+@Deprecated
 public class SSTableSimpleUnsortedWriter extends AbstractSSTableSimpleWriter
 {
     private static final Buffer SENTINEL = new Buffer();
@@ -176,6 +179,7 @@ public class SSTableSimpleUnsortedWriter extends AbstractSSTableSimpleWriter
         buffer = new Buffer();
         currentSize = 0;
         columnFamily = getColumnFamily();
+        buffer.setFirstInsertedKey(currentKey);
     }
 
     private void put(Buffer buffer) throws IOException
@@ -208,7 +212,17 @@ public class SSTableSimpleUnsortedWriter extends AbstractSSTableSimpleWriter
     }
 
     // typedef
-    private static class Buffer extends TreeMap<DecoratedKey, ColumnFamily> {}
+    private static class Buffer extends TreeMap<DecoratedKey, ColumnFamily> {
+        private DecoratedKey firstInsertedKey;
+
+        public void setFirstInsertedKey(DecoratedKey firstInsertedKey) {
+            this.firstInsertedKey = firstInsertedKey;
+        }
+
+        public DecoratedKey getFirstInsertedKey() {
+            return firstInsertedKey;
+        }
+    }
 
     private class DiskWriter extends Thread
     {
@@ -227,16 +241,14 @@ public class SSTableSimpleUnsortedWriter extends AbstractSSTableSimpleWriter
 
                         try (SSTableWriter writer = getWriter();)
                         {
-                            boolean first = true;
                             for (Map.Entry<DecoratedKey, ColumnFamily> entry : b.entrySet())
                             {
                                 if (entry.getValue().getColumnCount() > 0)
                                     writer.append(entry.getKey(), entry.getValue());
-                                else if (!first)
+                                else if (!entry.getKey().equals(b.getFirstInsertedKey()))
                                     throw new AssertionError("Empty partition");
-                                first = false;
                             }
-
+                            
                             writer.finish(false);
                         }
                     }

@@ -64,7 +64,17 @@ public final class DropFunctionStatement extends SchemaAlteringStatement
     {
         argTypes = new ArrayList<>(argRawTypes.size());
         for (CQL3Type.Raw rawType : argRawTypes)
-            argTypes.add(rawType.prepare(typeKeyspace(rawType)).getType());
+        {
+            if (rawType.isFrozen())
+                throw new InvalidRequestException("The function arguments should not be frozen; remove the frozen<> modifier");
+
+            // UDT are not supported non frozen but we do not allow the frozen keyword for argument. So for the moment we
+            // freeze them here
+            if (!rawType.canBeNonFrozen())
+                rawType.freeze();
+
+            argTypes.add(rawType.prepare(functionName.keyspace).getType());
+        }
         return super.prepare();
     }
 
@@ -150,14 +160,6 @@ public final class DropFunctionStatement extends SchemaAlteringStatement
             sb.append(Joiner.on(", ").join(argRawTypes));
         sb.append("'");
         return sb.toString();
-    }
-
-    private String typeKeyspace(CQL3Type.Raw rawType)
-    {
-        String ks = rawType.keyspace();
-        if (ks != null)
-            return ks;
-        return functionName.keyspace;
     }
 
     private Function findFunction()
