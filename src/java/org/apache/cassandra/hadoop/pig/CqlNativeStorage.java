@@ -92,7 +92,6 @@ public class CqlNativeStorage extends LoadFunc implements StoreFuncInterface, Lo
     private String nativePort;
     private String nativeCoreConnections;
     private String nativeMaxConnections;
-    private String nativeMinSimultReqs;
     private String nativeMaxSimultReqs;
     private String nativeConnectionTimeout;
     private String nativeReadConnectionTimeout;
@@ -573,8 +572,6 @@ public class CqlNativeStorage extends LoadFunc implements StoreFuncInterface, Lo
             CqlConfigHelper.setInputCoreConnections(conf, nativeCoreConnections);
         if (nativeMaxConnections != null)
             CqlConfigHelper.setInputMaxConnections(conf, nativeMaxConnections);
-        if (nativeMinSimultReqs != null)
-            CqlConfigHelper.setInputMinSimultReqPerConnections(conf, nativeMinSimultReqs);
         if (nativeMaxSimultReqs != null)
             CqlConfigHelper.setInputMaxSimultReqPerConnections(conf, nativeMaxSimultReqs);
         if (nativeConnectionTimeout != null)
@@ -792,8 +789,6 @@ public class CqlNativeStorage extends LoadFunc implements StoreFuncInterface, Lo
                     nativeCoreConnections = urlQuery.get("core_conns");
                 if (urlQuery.containsKey("max_conns"))
                     nativeMaxConnections = urlQuery.get("max_conns");
-                if (urlQuery.containsKey("min_simult_reqs"))
-                    nativeMinSimultReqs = urlQuery.get("min_simult_reqs");
                 if (urlQuery.containsKey("max_simult_reqs"))
                     nativeMaxSimultReqs = urlQuery.get("max_simult_reqs");
                 if (urlQuery.containsKey("native_timeout"))
