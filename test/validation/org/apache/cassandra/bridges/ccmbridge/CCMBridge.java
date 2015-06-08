@@ -25,26 +25,21 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.cassandra.bridges.Bridge;
 
-public class CCMBridge implements Bridge
+public class CCMBridge extends Bridge
 {
 
-    static final File CASSANDRA_DIR = new File("../../../../../../..");
+    static final File CASSANDRA_DIR = new File("./");
 
     private final Runtime runtime = Runtime.getRuntime();
     private final File ccmDir;
+    private final String DEFAULT_CLUSTER_NAME = "validation";
 
     private static final Logger logger = LoggerFactory.getLogger(CCMBridge.class);
 
-    private CCMBridge()
+    public CCMBridge(int nodeCount)
     {
         this.ccmDir = Files.createTempDir();
-    }
-
-    public Bridge create(int nodeCount)
-    {
-        CCMBridge bridge = new CCMBridge();
-        bridge.execute("ccm create %s -n %d -s");
-        return bridge;
+        execute("ccm create %s -n %d --install-dir %s -s", DEFAULT_CLUSTER_NAME, nodeCount, CASSANDRA_DIR);
     }
 
     public void destroy()
