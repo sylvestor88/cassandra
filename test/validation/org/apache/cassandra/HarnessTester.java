@@ -33,6 +33,7 @@ import org.junit.Test;
 
 import com.google.common.io.ByteStreams;
 import org.apache.cassandra.bridges.Bridge;
+import org.apache.cassandra.bridges.ccmbridge.CCMBridge;
 import org.apache.cassandra.htest.Config;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.modules.Module;
@@ -46,10 +47,11 @@ public class HarnessTester
     public Bridge cluster;
 
     @Test
-    public void harnessTest()
+    public void fakeTest()
     {
-        Config config = loadConfig(getConfigURL("./configs/test.yaml"));
-        Module module = new SimpleWriteModule(config);
+        //Config config = loadConfig(getConfigURL("./configs/test.yaml"));
+        cluster = new CCMBridge(3);
+        Module module = new SimpleWriteModule(null);
         Future future = module.validate();
         try
         {
@@ -59,6 +61,12 @@ public class HarnessTester
         {
             Assert.assertTrue(false);
         }
+        cluster.destroy();
+    }
+
+    public void discoverTests()
+    {
+
     }
 
     public Config loadConfig(URL url)
