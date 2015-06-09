@@ -52,21 +52,7 @@ public class HarnessTester
         Config config = loadConfig(getConfigURL("/Users/philipthompson/cstar/cassandra/test/validation/org/apache/cassandra/htest/test.yaml"));
         cluster = new CCMBridge(config.nodeCount);
         Assert.assertEquals(config.nodeCount, 3);
-        Module module = null;
-        try
-        {
-            module = (Module) Class.forName(MODULE_PACKAGE + config.modules[0]).getDeclaredConstructor(Config.class).newInstance(config);
-        }
-        // ClassNotFoundException
-        // NoSuchMethodException
-        // InvocationTargetException
-        // InstantiationException
-        // IllegalAccessException
-        catch (Exception e)
-        {
-            e.printStackTrace();
-            Assert.fail();
-        }
+        Module module = reflectModuleByName(config.modules[0], config);
 
         Future future = module.validate();
         try
@@ -83,6 +69,23 @@ public class HarnessTester
     public void discoverTests()
     {
 
+    }
+
+    public Module reflectModuleByName(String moduleName, Config config)
+    {
+        try
+        {
+            return (Module) Class.forName(MODULE_PACKAGE + moduleName).getDeclaredConstructor(Config.class).newInstance(config);
+        }
+        // ClassNotFoundException
+        // NoSuchMethodException
+        // InvocationTargetException
+        // InstantiationException
+        // IllegalAccessException
+        catch (Exception e)
+        {
+            throw new RuntimeException(e);
+        }
     }
 
     public Config loadConfig(URL url)
