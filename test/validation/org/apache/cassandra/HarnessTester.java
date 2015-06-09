@@ -50,7 +50,8 @@ public class HarnessTester
     public void fakeTest()
     {
         Config config = loadConfig(getConfigURL("/Users/philipthompson/cstar/cassandra/test/validation/org/apache/cassandra/htest/test.yaml"));
-        cluster = new CCMBridge(3);
+        cluster = new CCMBridge(config.nodeCount);
+        Assert.assertEquals(config.nodeCount, 3);
         Module module = new SimpleWriteModule(config);
         Future future = module.validate();
         try
