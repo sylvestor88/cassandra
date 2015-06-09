@@ -49,9 +49,9 @@ public class HarnessTester
     @Test
     public void fakeTest()
     {
-        //Config config = loadConfig(getConfigURL("./configs/test.yaml"));
+        Config config = loadConfig(getConfigURL("/Users/philipthompson/cstar/cassandra/test/validation/org/apache/cassandra/htest/test.yaml"));
         cluster = new CCMBridge(3);
-        Module module = new SimpleWriteModule(null);
+        Module module = new SimpleWriteModule(config);
         Future future = module.validate();
         try
         {
