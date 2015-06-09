@@ -25,7 +25,6 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 
 import org.junit.Assert;
@@ -36,8 +35,7 @@ import org.apache.cassandra.bridges.Bridge;
 import org.apache.cassandra.bridges.ccmbridge.CCMBridge;
 import org.apache.cassandra.htest.Config;
 import org.apache.cassandra.exceptions.ConfigurationException;
-import org.apache.cassandra.modules.Module;
-import org.apache.cassandra.modules.SimpleWriteModule;
+import org.apache.cassandra.modules.*;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.error.YAMLException;
 
