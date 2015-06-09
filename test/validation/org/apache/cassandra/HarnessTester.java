@@ -24,6 +24,7 @@ import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.InvocationTargetException;
 import java.net.URL;
 import java.util.concurrent.Future;
 
@@ -50,7 +51,22 @@ public class HarnessTester
         Config config = loadConfig(getConfigURL("/Users/philipthompson/cstar/cassandra/test/validation/org/apache/cassandra/htest/test.yaml"));
         cluster = new CCMBridge(config.nodeCount);
         Assert.assertEquals(config.nodeCount, 3);
-        Module module = new SimpleWriteModule(config);
+        Module module = null;
+        try
+        {
+            module = (Module) Class.forName("org.apache.cassandra.modules." + config.modules[0]).getDeclaredConstructor(Config.class).newInstance(config);
+        }
+        // ClassNotFoundException
+        // NoSuchMethodException
+        // InvocationTargetException
+        // InstantiationException
+        // IllegalAccessException
+        catch (Exception e)
+        {
+            e.printStackTrace();
+            Assert.fail();
+        }
+
         Future future = module.validate();
         try
         {
