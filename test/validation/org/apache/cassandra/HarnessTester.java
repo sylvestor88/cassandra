@@ -44,6 +44,7 @@ import org.yaml.snakeyaml.error.YAMLException;
 public class HarnessTester
 {
     public Bridge cluster;
+    public static final String MODULE_PACKAGE = "org.apache.cassandra.modules.";
 
     @Test
     public void fakeTest()
@@ -54,7 +55,7 @@ public class HarnessTester
         Module module = null;
         try
         {
-            module = (Module) Class.forName("org.apache.cassandra.modules." + config.modules[0]).getDeclaredConstructor(Config.class).newInstance(config);
+            module = (Module) Class.forName(MODULE_PACKAGE + config.modules[0]).getDeclaredConstructor(Config.class).newInstance(config);
         }
         // ClassNotFoundException
         // NoSuchMethodException
