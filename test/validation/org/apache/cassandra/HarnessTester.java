@@ -25,6 +25,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.concurrent.Future;
@@ -69,12 +70,26 @@ public class HarnessTester
     {
         Config config = loadConfig(getConfigURL(yaml));
         cluster = new CCMBridge(config.nodeCount);
-        Module module = reflectModuleByName(config.modules[0], config);
+        ArrayList<Module> modules = new ArrayList<>();
+        for (String moduleName: config.modules)
+        {
+            Module module = reflectModuleByName(moduleName, config);
+            modules.add(module);
+        }
 
-        Future future = module.validate();
+        ArrayList<Future> futures = new ArrayList<>(modules.size());
+        for (Module module : modules)
+        {
+            Future future = module.validate();
+            futures.add(future);
+        }
+
         try
         {
-            future.get();
+            for (Future future : futures)
+            {
+                future.get();
+            }
         }
         catch (Exception e)
         {
