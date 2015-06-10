@@ -29,6 +29,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.concurrent.Future;
 
+import org.junit.After;
 import org.junit.Assert;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
@@ -48,11 +49,14 @@ public class HarnessTester
 {
     public static final String MODULE_PACKAGE = "org.apache.cassandra.modules.";
     private String yaml;
+    private Bridge cluster;
 
     @Parameterized.Parameters
     public static Collection<Object[]> discoverTests()
     {
-        return Arrays.asList(new Object[][] {{"a"}, {"b"}});
+        return Arrays.asList(new Object[][] {
+                    {"/Users/philipthompson/cstar/cassandra/test/validation/org/apache/cassandra/htest/test.yaml"},
+                    {"/Users/philipthompson/cstar/cassandra/test/validation/org/apache/cassandra/htest/test2.yaml"}});
     }
 
     public HarnessTester(String yamlParameter)
@@ -61,11 +65,10 @@ public class HarnessTester
     }
 
     @Test
-    public void fakeTest()
+    public void harness()
     {
-        Config config = loadConfig(getConfigURL("/Users/philipthompson/cstar/cassandra/test/validation/org/apache/cassandra/htest/test.yaml"));
-        Bridge cluster = new CCMBridge(config.nodeCount);
-        Assert.assertEquals(config.nodeCount, 3);
+        Config config = loadConfig(getConfigURL(yaml));
+        cluster = new CCMBridge(config.nodeCount);
         Module module = reflectModuleByName(config.modules[0], config);
 
         Future future = module.validate();
@@ -77,6 +80,11 @@ public class HarnessTester
         {
             Assert.assertTrue(false);
         }
+    }
+
+    @After
+    public void tearDown()
+    {
         cluster.destroy();
     }
 
