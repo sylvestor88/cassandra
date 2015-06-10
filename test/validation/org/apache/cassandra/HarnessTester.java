@@ -25,9 +25,13 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.concurrent.Future;
 
 import org.junit.Assert;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
 import org.junit.Test;
 
 import com.google.common.io.ByteStreams;
@@ -39,17 +43,28 @@ import org.apache.cassandra.modules.*;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.error.YAMLException;
 
-
+@RunWith(Parameterized.class)
 public class HarnessTester
 {
-    public Bridge cluster;
     public static final String MODULE_PACKAGE = "org.apache.cassandra.modules.";
+    private String yaml;
+
+    @Parameterized.Parameters
+    public static Collection<Object[]> discoverTests()
+    {
+        return Arrays.asList(new Object[][] {{"a"}, {"b"}});
+    }
+
+    public HarnessTester(String yamlParameter)
+    {
+        yaml = yamlParameter;
+    }
 
     @Test
     public void fakeTest()
     {
         Config config = loadConfig(getConfigURL("/Users/philipthompson/cstar/cassandra/test/validation/org/apache/cassandra/htest/test.yaml"));
-        cluster = new CCMBridge(config.nodeCount);
+        Bridge cluster = new CCMBridge(config.nodeCount);
         Assert.assertEquals(config.nodeCount, 3);
         Module module = reflectModuleByName(config.modules[0], config);
 
@@ -65,10 +80,6 @@ public class HarnessTester
         cluster.destroy();
     }
 
-    public void discoverTests()
-    {
-
-    }
 
     public Module reflectModuleByName(String moduleName, Config config)
     {
