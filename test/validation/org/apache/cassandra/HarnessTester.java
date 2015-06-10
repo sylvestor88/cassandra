@@ -88,7 +88,6 @@ public class HarnessTester
         cluster.destroy();
     }
 
-
     public Module reflectModuleByName(String moduleName, Config config)
     {
         try
