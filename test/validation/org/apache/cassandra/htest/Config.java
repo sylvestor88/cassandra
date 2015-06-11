@@ -20,15 +20,8 @@
  */
 package org.apache.cassandra.htest;
 
-import org.apache.cassandra.modules.Module;
-
 public class Config
 {
     public int nodeCount;
     public String[] modules;
-
-    public Config()
-    {
-
-    }
 }
