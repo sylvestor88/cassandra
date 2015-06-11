@@ -26,7 +26,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.concurrent.Future;
 
@@ -41,6 +40,7 @@ import org.apache.cassandra.bridges.Bridge;
 import org.apache.cassandra.bridges.ccmbridge.CCMBridge;
 import org.apache.cassandra.htest.Config;
 import org.apache.cassandra.exceptions.ConfigurationException;
+import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.modules.*;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.error.YAMLException;
@@ -55,9 +55,23 @@ public class HarnessTester
     @Parameterized.Parameters
     public static Collection<Object[]> discoverTests()
     {
-        return Arrays.asList(new Object[][] {
-                    {"/Users/philipthompson/cstar/cassandra/test/validation/org/apache/cassandra/htest/test.yaml"},
-                    {"/Users/philipthompson/cstar/cassandra/test/validation/org/apache/cassandra/htest/test2.yaml"}});
+
+        File folder = new File("../cassandra/test/validation/org/apache/cassandra/htest");
+        File[] listOfFiles = folder.listFiles();
+
+        Collection<Object[]> result = new ArrayList<Object[]>();
+
+        for (int i = 0; i < listOfFiles.length; i++)
+        {
+            File file = listOfFiles[i];
+            if (file.isFile() && file.getName().endsWith(".yaml"))
+            {
+                String content = FileUtils.getCanonicalPath(file);
+                result.add(new Object[]{content});
+            }
+        }
+
+        return result;
     }
 
     public HarnessTester(String yamlParameter)
