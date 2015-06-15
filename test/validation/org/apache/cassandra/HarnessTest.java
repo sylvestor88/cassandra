@@ -46,7 +46,7 @@ import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.error.YAMLException;
 
 @RunWith(Parameterized.class)
-public class HarnessTester
+public class HarnessTest
 {
     public static final String MODULE_PACKAGE = "org.apache.cassandra.modules.";
     private String yaml;
@@ -74,7 +74,7 @@ public class HarnessTester
         return result;
     }
 
-    public HarnessTester(String yamlParameter)
+    public HarnessTest(String yamlParameter)
     {
         yaml = yamlParameter;
     }
