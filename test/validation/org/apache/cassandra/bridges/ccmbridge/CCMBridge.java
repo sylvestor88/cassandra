@@ -19,11 +19,13 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.util.Map;
 
 import com.google.common.io.Files;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.cassandra.bridges.Bridge;
+import org.apache.cassandra.htest.Config;
 
 public class CCMBridge extends Bridge
 {
@@ -36,16 +38,29 @@ public class CCMBridge extends Bridge
 
     private static final Logger logger = LoggerFactory.getLogger(CCMBridge.class);
 
+    public CCMBridge(Config config)
+    {
+        this(config.nodeCount);
+        if (config.cassandrayaml != null)
+            updateConf(config.cassandrayaml);
+        start();
+    }
+
     public CCMBridge(int nodeCount)
     {
         this.ccmDir = Files.createTempDir();
-        execute("ccm create %s -n %d --install-dir %s -s", DEFAULT_CLUSTER_NAME, nodeCount, CASSANDRA_DIR);
+        execute("ccm create %s -n %d --install-dir %s", DEFAULT_CLUSTER_NAME, nodeCount, CASSANDRA_DIR);
     }
 
     public void destroy()
     {
         stop();
         execute("ccm remove");
+    }
+
+    public void start()
+    {
+        execute("ccm start");
     }
 
     public void stop()
@@ -56,6 +71,12 @@ public class CCMBridge extends Bridge
     public void forceStop()
     {
         execute("ccm stop --not-gently");
+    }
+
+    public void updateConf(Map<String, String> options)
+    {
+        for (String key : options.keySet())
+            execute("ccm updateconf %s:%s", key, options.get(key));
     }
 
     private void execute(String command, Object... args)
