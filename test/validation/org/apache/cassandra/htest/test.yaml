@@ -1,3 +1,5 @@
 nodeCount: 3
 modules:
     - SimpleWriteModule
+cassandrayaml: !!map
+    concurrent_writes: 64
