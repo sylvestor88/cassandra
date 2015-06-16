@@ -73,6 +73,12 @@ public class CCMBridge extends Bridge
         execute("ccm stop --not-gently");
     }
 
+    public String readClusterLogs()
+    {
+        String result = executeAndRead("ccm checklogerror");
+        return result;
+    }
+
     public void updateConf(Map<String, String> options)
     {
         for (String key : options.keySet())
@@ -140,6 +146,32 @@ public class CCMBridge extends Bridge
             throw new RuntimeException(e);
         }
         catch (InterruptedException e)
+        {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private String executeAndRead(String command, Object... args)
+    {
+        try
+        {
+            String fullCommand = String.format(command, args) + " --config-dir=" + ccmDir;
+            logger.debug("Executing: " + fullCommand);
+            Process p = runtime.exec(fullCommand, null, CASSANDRA_DIR);
+
+            BufferedReader outReaderOutput = new BufferedReader(new InputStreamReader(p.getInputStream()));
+            String line = outReaderOutput.readLine();
+            String output = null;
+
+            while (line != null)
+            {
+                output += line + "\n";
+                line = outReaderOutput.readLine();
+            }
+
+            return output;
+        }
+        catch (IOException e)
         {
             throw new RuntimeException(e);
         }
