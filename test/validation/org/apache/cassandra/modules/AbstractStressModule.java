@@ -25,11 +25,11 @@ import org.apache.cassandra.htest.Config;
 import org.apache.cassandra.stress.StressAction;
 import org.apache.cassandra.stress.settings.StressSettings;
 
-public abstract class StressModule extends Module
+public abstract class AbstractStressModule extends Module
 {
     private StressSettings settings;
 
-    public StressModule(Config config, StressSettings settings)
+    public AbstractStressModule(Config config, StressSettings settings)
     {
         super(config);
         this.settings = settings;
