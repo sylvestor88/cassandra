@@ -27,4 +27,5 @@ public class Config
     public int nodeCount;
     public String[] modules;
     public Map<String, String> cassandrayaml;
+    public Map<String, Map<String, String>> moduleArgs;
 }
