@@ -32,7 +32,6 @@ public abstract class StressModule extends Module
     public StressModule(Config config, StressSettings settings)
     {
         super(config);
-        executor = new DebuggableThreadPoolExecutor("Stress", Thread.NORM_PRIORITY);
         this.settings = settings;
     }
 
