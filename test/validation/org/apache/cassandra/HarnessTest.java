@@ -107,7 +107,7 @@ public class HarnessTest
         }
         catch (Exception e)
         {
-            Assert.assertTrue(false);
+            throw new RuntimeException(e);
         }
     }
 
