@@ -1709,6 +1709,7 @@
       <sourceFolder url="file://$MODULE_DIR$/test/unit" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/test/long" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/test/pig" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/test/validation" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/test/microbench" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/test/resources" type="java-test-resource" />
       <excludeFolder url="file://$MODULE_DIR$/.idea" />
