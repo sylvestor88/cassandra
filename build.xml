@@ -1110,6 +1110,7 @@
      <src path="${test.pig.src}"/>
      <src path="${test.microbench.src}"/>
      <src path="${test.validation.src}"/>
+     <src path="${stress.build.src}"/>
     </javac>
 
     <!-- Non-java resources needed by the test suite -->
@@ -1638,6 +1639,7 @@
       <sourceFolder url="file://$MODULE_DIR$/test/unit" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/test/long" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/test/pig" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/test/validation" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/test/microbench" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/test/resources" type="java-test-resource" />
       <excludeFolder url="file://$MODULE_DIR$/.idea" />

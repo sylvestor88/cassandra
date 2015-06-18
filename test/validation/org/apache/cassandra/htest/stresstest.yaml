@@ -1,0 +1,8 @@
+nodeCount: 3
+modules:
+    - ArbitraryStressOperationModule
+cassandrayaml: !!map
+    concurrent_writes: 64
+moduleArgs: !!map
+    ArbitraryStressOperationModule: !!map
+        stress_settings: write n=100
