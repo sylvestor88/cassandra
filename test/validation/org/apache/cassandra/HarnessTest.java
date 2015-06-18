@@ -25,6 +25,8 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.concurrent.Future;
@@ -114,6 +116,7 @@ public class HarnessTest
     @After
     public void tearDown()
     {
+        cluster.captureLogs(getTestName(yaml));
         String result = cluster.readClusterLogs();
         cluster.destroy();
         Assert.assertTrue(result, result == null);
@@ -173,5 +176,15 @@ public class HarnessTest
         {
             throw new AssertionError("Yaml path was invalid", e);
         }
+    }
+
+    public String getTestName(String yamlPath){
+
+        Path p = Paths.get(yamlPath);
+        String file = p.getFileName().toString();
+
+        String testName = file.substring(0, file.lastIndexOf('.'));
+
+        return testName;
     }
 }

@@ -24,4 +24,5 @@ public abstract class Bridge
 {
     public abstract void destroy();
     public abstract String readClusterLogs();
+    public abstract void captureLogs(String testName);
 }
