@@ -17,15 +17,16 @@
  */
 package org.apache.cassandra.modules;
 
+import org.apache.cassandra.bridges.Bridge;
 import org.apache.cassandra.concurrent.DebuggableThreadPoolExecutor;
 import org.apache.cassandra.htest.Config;
 import org.apache.cassandra.stress.settings.StressSettings;
 
 public class ArbitraryStressOperationModule extends AbstractStressModule
 {
-    public ArbitraryStressOperationModule(Config config)
+    public ArbitraryStressOperationModule(Config config, Bridge bridge)
     {
-        super(config, StressSettings.parse(config.moduleArgs.get("ArbitraryStressOperationModule")
+        super(config, bridge, StressSettings.parse(config.moduleArgs.get("ArbitraryStressOperationModule")
                                                             .get("stress_settings").split(" ")));
         executor = new DebuggableThreadPoolExecutor("ArbitraryStressOperation", Thread.NORM_PRIORITY);
     }

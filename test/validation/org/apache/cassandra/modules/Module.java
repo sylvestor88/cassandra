@@ -23,17 +23,20 @@ package org.apache.cassandra.modules;
 
 import java.util.concurrent.Future;
 
+import org.apache.cassandra.bridges.Bridge;
 import org.apache.cassandra.concurrent.DebuggableThreadPoolExecutor;
 import org.apache.cassandra.htest.Config;
 
 public abstract class Module
 {
     DebuggableThreadPoolExecutor executor;
-    Config config;
+    final Config config;
+    final Bridge bridge;
 
-    public Module(Config config)
+    public Module(Config config, Bridge bridge)
     {
         this.config = config;
+        this.bridge = bridge;
     }
 
     public abstract Future validate();
