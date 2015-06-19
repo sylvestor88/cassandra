@@ -17,39 +17,16 @@
  */
 package org.apache.cassandra.modules;
 
-import java.io.FileNotFoundException;
-import java.util.concurrent.Future;
-
 import org.apache.cassandra.bridges.Bridge;
 import org.apache.cassandra.concurrent.DebuggableThreadPoolExecutor;
 import org.apache.cassandra.htest.Config;
-import org.apache.cassandra.stress.StressAction;
 import org.apache.cassandra.stress.settings.StressSettings;
 
-public abstract class AbstractStressModule extends Module
+public class LargeStressWriteModule extends AbstractStressModule
 {
-    protected StressSettings settings;
-
-    public AbstractStressModule(Config config, Bridge bridge, StressSettings settings)
+    public LargeStressWriteModule(Config config, Bridge bridge)
     {
-        super(config, bridge);
-        this.settings = settings;
-    }
-
-    public Future validate()
-    {
-        return newTask(stress(this.settings));
-    }
-
-    StressAction stress(StressSettings settings)
-    {
-        try
-        {
-            return new StressAction(settings, settings.log.getOutput());
-        }
-        catch (FileNotFoundException e)
-        {
-            throw new RuntimeException(e);
-        }
+        super(config, bridge, StressSettings.parse(new String[]{"write", "n=10M"}));
+        executor = new DebuggableThreadPoolExecutor("LargeStressWrite", Thread.NORM_PRIORITY);
     }
 }
