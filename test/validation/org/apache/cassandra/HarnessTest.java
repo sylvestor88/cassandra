@@ -89,7 +89,7 @@ public class HarnessTest
         ArrayList<Module> modules = new ArrayList<>();
         for (String moduleName: config.modules)
         {
-            Module module = reflectModuleByName(moduleName, config);
+            Module module = reflectModuleByName(moduleName, config, cluster);
             modules.add(module);
         }
 
@@ -123,11 +123,12 @@ public class HarnessTest
         Assert.assertTrue(result, result == null);
     }
 
-    public Module reflectModuleByName(String moduleName, Config config)
+    public Module reflectModuleByName(String moduleName, Config config, Bridge bridge)
     {
         try
         {
-            return (Module) Class.forName(MODULE_PACKAGE + moduleName).getDeclaredConstructor(Config.class).newInstance(config);
+            return (Module) Class.forName(MODULE_PACKAGE + moduleName)
+                                 .getDeclaredConstructor(new Class[]{Config.class, Bridge.class}).newInstance(config, bridge);
         }
         // ClassNotFoundException
         // NoSuchMethodException

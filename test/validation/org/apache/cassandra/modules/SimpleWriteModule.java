@@ -28,15 +28,16 @@ import com.datastax.driver.core.Cluster;
 import com.datastax.driver.core.PreparedStatement;
 import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Session;
+import org.apache.cassandra.bridges.Bridge;
 import org.apache.cassandra.concurrent.DebuggableThreadPoolExecutor;
 import org.apache.cassandra.htest.Config;
 
 public class SimpleWriteModule extends Module
 {
 
-    public SimpleWriteModule(Config config)
+    public SimpleWriteModule(Config config, Bridge bridge)
     {
-        super(config);
+        super(config, bridge);
         executor = new DebuggableThreadPoolExecutor("SimpleWrite", Thread.NORM_PRIORITY);
     }
 

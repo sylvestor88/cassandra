@@ -19,14 +19,15 @@ package org.apache.cassandra.modules;
 
 import java.util.concurrent.Future;
 
+import org.apache.cassandra.bridges.Bridge;
 import org.apache.cassandra.concurrent.DebuggableThreadPoolExecutor;
 import org.apache.cassandra.htest.Config;
 
 public class SimpleCompactModule extends Module
 {
-    public SimpleCompactModule(Config config)
+    public SimpleCompactModule(Config config, Bridge bridge)
     {
-        super(config);
+        super(config, bridge);
         executor = new DebuggableThreadPoolExecutor("SimpleCompact", Thread.NORM_PRIORITY);
     }
 
