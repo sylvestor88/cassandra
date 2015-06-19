@@ -25,23 +25,25 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.concurrent.Future;
 
+import com.google.common.io.ByteStreams;
 import org.junit.After;
 import org.junit.Assert;
+import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
-import org.junit.Test;
 
-import com.google.common.io.ByteStreams;
 import org.apache.cassandra.bridges.Bridge;
 import org.apache.cassandra.bridges.ccmbridge.CCMBridge;
-import org.apache.cassandra.htest.Config;
 import org.apache.cassandra.exceptions.ConfigurationException;
+import org.apache.cassandra.htest.Config;
 import org.apache.cassandra.io.util.FileUtils;
-import org.apache.cassandra.modules.*;
+import org.apache.cassandra.modules.Module;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.error.YAMLException;
 
@@ -114,6 +116,8 @@ public class HarnessTest
     @After
     public void tearDown()
     {
+        cluster.stop();
+        cluster.captureLogs(getTestName(yaml));
         String result = cluster.readClusterLogs();
         cluster.destroy();
         Assert.assertTrue(result, result == null);
@@ -173,5 +177,13 @@ public class HarnessTest
         {
             throw new AssertionError("Yaml path was invalid", e);
         }
+    }
+
+    public String getTestName(String yamlPath)
+    {
+        Path p = Paths.get(yamlPath);
+        String file = p.getFileName().toString();
+        String testName = file.substring(0, file.lastIndexOf('.'));
+        return testName;
     }
 }

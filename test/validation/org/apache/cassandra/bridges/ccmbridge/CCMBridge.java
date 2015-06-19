@@ -22,14 +22,18 @@ import java.io.InputStreamReader;
 import java.util.Map;
 
 import com.google.common.io.Files;
+import org.apache.commons.io.FileUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import org.apache.cassandra.bridges.ArchiveClusterLogs;
 import org.apache.cassandra.bridges.Bridge;
 import org.apache.cassandra.htest.Config;
 
 public class CCMBridge extends Bridge
 {
 
+    private int nodeCount;
     static final File CASSANDRA_DIR = new File("./");
 
     private final Runtime runtime = Runtime.getRuntime();
@@ -48,6 +52,7 @@ public class CCMBridge extends Bridge
 
     public CCMBridge(int nodeCount)
     {
+        this.nodeCount = nodeCount;
         this.ccmDir = Files.createTempDir();
         execute("ccm create %s -n %d --install-dir %s", DEFAULT_CLUSTER_NAME, nodeCount, CASSANDRA_DIR);
     }
@@ -174,6 +179,34 @@ public class CCMBridge extends Bridge
         catch (IOException e)
         {
             throw new RuntimeException(e);
+        }
+    }
+
+    public void captureLogs(String testName)
+    {
+        String clusterLogsPath = ccmDir + "/" + DEFAULT_CLUSTER_NAME;
+        String folderName = testName;
+        String existingFolder = CASSANDRA_DIR + "/build/test/logs/validation/" + folderName;
+
+        if(ArchiveClusterLogs.checkForFolder(existingFolder))
+        {
+            ArchiveClusterLogs.zipExistingDirectory(existingFolder);
+        }
+
+        for(int count = 1; count <= nodeCount; count++)
+        {
+            File sourceFile = new File(clusterLogsPath + "/node" + count + "/logs" + "/system.log");
+
+            File destFile = new File(CASSANDRA_DIR + "/build/test/logs/validation/" + folderName + "/node" + count + ".log");
+
+            try
+            {
+                FileUtils.copyFile(sourceFile, destFile);
+            }
+            catch (IOException e)
+            {
+                e.printStackTrace();
+            }
         }
     }
 }
