@@ -17,39 +17,50 @@
  */
 package org.apache.cassandra.modules;
 
-import java.io.FileNotFoundException;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.cassandra.bridges.Bridge;
 import org.apache.cassandra.concurrent.DebuggableThreadPoolExecutor;
+import org.apache.cassandra.concurrent.NamedThreadFactory;
 import org.apache.cassandra.htest.Config;
-import org.apache.cassandra.stress.StressAction;
 import org.apache.cassandra.stress.settings.StressSettings;
 
-public abstract class AbstractStressModule extends Module
+public class StressDataLossModule extends AbstractStressModule
 {
-    protected StressSettings settings;
-
-    public AbstractStressModule(Config config, Bridge bridge, StressSettings settings)
+    public StressDataLossModule(Config config, Bridge bridge)
     {
-        super(config, bridge);
-        this.settings = settings;
+        super(config, bridge, StressSettings.parse(new String[]{ "write", "n=10M" }));
+        executor = new DebuggableThreadPoolExecutor(2, Integer.MAX_VALUE, TimeUnit.SECONDS, new LinkedBlockingQueue<Runnable>(), new NamedThreadFactory("LargeStressWrite", Thread.NORM_PRIORITY));
     }
 
+    @Override
     public Future validate()
     {
-        return newTask(stress(this.settings));
-    }
-
-    StressAction stress(StressSettings settings)
-    {
+        Future stressFuture = newTask(stress(this.settings));
+        Future dataFuture = newTask(new DataLossTask());
         try
         {
-            return new StressAction(settings, settings.log.getOutput());
+            dataFuture.get();
         }
-        catch (FileNotFoundException e)
+        catch (InterruptedException e)
         {
             throw new RuntimeException(e);
+        }
+        catch (ExecutionException e)
+        {
+            throw new RuntimeException(e);
+        }
+        return stressFuture;
+    }
+
+    class DataLossTask implements Runnable
+    {
+        public void run()
+        {
+
         }
     }
 }
