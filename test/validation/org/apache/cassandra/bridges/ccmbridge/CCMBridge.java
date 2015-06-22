@@ -34,9 +34,6 @@ public class CCMBridge extends Bridge
 {
 
     private int nodeCount;
-    static final File CASSANDRA_DIR = new File("./");
-
-    private final Runtime runtime = Runtime.getRuntime();
     private final File ccmDir;
     private final String DEFAULT_CLUSTER_NAME = "validation";
 
