@@ -1444,7 +1444,7 @@
   </target>
 
   <target name="htest" depends="build-test" description="Execute CVH">
-      <testmacro suitename="validation" inputdir="${test.validation.src}" timeout="1200000">
+      <testmacro inputdir="${test.validation.src}" timeout="1200000">
       </testmacro>
   </target>
 
