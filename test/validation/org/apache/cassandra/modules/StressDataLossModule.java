@@ -75,9 +75,6 @@ public class StressDataLossModule extends AbstractStressModule
     {
         public void run()
         {
-            Cluster cluster = Cluster.builder().addContactPoints("127.0.0.1").build();
-            Session session = cluster.connect("keyspace1");
-            session.execute("DELETE * FROM standard1");
         }
     }
 }
