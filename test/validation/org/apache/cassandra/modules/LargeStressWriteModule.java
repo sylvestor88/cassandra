@@ -26,7 +26,7 @@ public class LargeStressWriteModule extends AbstractStressModule
 {
     public LargeStressWriteModule(Config config, Bridge bridge)
     {
-        super(config, bridge, StressSettings.parse(new String[]{"write", "n=10M"}));
+        super(config, bridge, StressSettings.parse(new String[]{"write", "n=2M"}));
         executor = new DebuggableThreadPoolExecutor("LargeStressWrite", Thread.NORM_PRIORITY);
     }
 }
