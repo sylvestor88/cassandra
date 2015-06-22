@@ -41,7 +41,20 @@ public class StressDataLossModule extends AbstractStressModule
     @Override
     public Future validate()
     {
-        Future stressFuture = newTask(stress(this.settings));
+        Future setupFuture = newTask(stress(StressSettings.parse(new String[]{"write", "n=10K"})));
+        try
+        {
+            setupFuture.get();
+        }
+        catch (InterruptedException e)
+        {
+            throw new RuntimeException(e);
+        }
+        catch (ExecutionException e)
+        {
+            throw new RuntimeException(e);
+        }
+        Future stressFuture = newTask(stress(this.settings));)
         Future dataFuture = newTask(new DataLossTask());
         try
         {
