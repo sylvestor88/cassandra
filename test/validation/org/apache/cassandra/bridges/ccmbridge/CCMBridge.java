@@ -34,6 +34,7 @@ public class CCMBridge extends Bridge
 {
 
     private int nodeCount;
+    static final File CASSANDRA_DIR = new File("./");
     private final File ccmDir;
     private final String DEFAULT_CLUSTER_NAME = "validation";
 
@@ -133,7 +134,6 @@ public class CCMBridge extends Bridge
             String fullCommand = String.format(command, args) + " --config-dir=" + ccmDir;
             logger.debug("Executing: " + fullCommand);
             Process p = runtime.exec(fullCommand, null, CASSANDRA_DIR);
-            int retValue = p.waitFor();
 
             BufferedReader outReaderOutput = new BufferedReader(new InputStreamReader(p.getInputStream()));
             String line = outReaderOutput.readLine();
@@ -144,10 +144,6 @@ public class CCMBridge extends Bridge
             }
         }
         catch (IOException e)
-        {
-            throw new RuntimeException(e);
-        }
-        catch (InterruptedException e)
         {
             throw new RuntimeException(e);
         }
@@ -206,4 +202,11 @@ public class CCMBridge extends Bridge
             }
         }
     }
+
+    public void nodeTool(int node, String command, String arguments)
+    {
+        String fullCommand = "ccm node" + node + " nodetool " + command + " " + arguments;
+        executeAndPrint(fullCommand);
+    }
+
 }

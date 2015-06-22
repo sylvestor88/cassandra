@@ -20,47 +20,13 @@
  */
 package org.apache.cassandra.bridges;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStreamReader;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 public abstract class Bridge
 {
-    private static final Logger logger = LoggerFactory.getLogger(Bridge.class);
-
-    protected static final File CASSANDRA_DIR = new File("./");
     protected final Runtime runtime = Runtime.getRuntime();
 
     public abstract void stop();
     public abstract void destroy();
     public abstract String readClusterLogs();
     public abstract void captureLogs(String testName);
-
-    public void nodeTool(int node, String command, String arguments)
-    {
-        try
-        {
-            String fullCommand = "ccm node" + node + " nodetool " + command + " " + arguments;
-            logger.debug("Executing: " + fullCommand);
-            Process p = runtime.exec(fullCommand);
-
-            BufferedReader outReaderOutput = new BufferedReader(new InputStreamReader(p.getInputStream()));
-            String line = outReaderOutput.readLine();
-
-            while (line != null)
-            {
-                System.out.println(line);
-                line = outReaderOutput.readLine();
-            }
-        }
-        catch (IOException e)
-        {
-            throw new RuntimeException(e);
-        }
-
-    }
+    public abstract void nodeTool(int node, String command, String arguments);
 }
