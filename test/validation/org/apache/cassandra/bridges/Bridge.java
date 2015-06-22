@@ -22,8 +22,11 @@ package org.apache.cassandra.bridges;
 
 public abstract class Bridge
 {
+    protected final Runtime runtime = Runtime.getRuntime();
+
     public abstract void stop();
     public abstract void destroy();
     public abstract String readClusterLogs();
     public abstract void captureLogs(String testName);
+    public abstract void nodeTool(int node, String command, String arguments);
 }
