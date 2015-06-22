@@ -54,7 +54,7 @@ public class StressDataLossModule extends AbstractStressModule
         {
             throw new RuntimeException(e);
         }
-        Future stressFuture = newTask(stress(this.settings));)
+        Future stressFuture = newTask(stress(this.settings));
         Future dataFuture = newTask(new DataLossTask());
         try
         {
