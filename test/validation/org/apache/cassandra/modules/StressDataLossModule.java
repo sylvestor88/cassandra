@@ -22,6 +22,8 @@ import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
+import com.datastax.driver.core.Cluster;
+import com.datastax.driver.core.Session;
 import org.apache.cassandra.bridges.Bridge;
 import org.apache.cassandra.concurrent.DebuggableThreadPoolExecutor;
 import org.apache.cassandra.concurrent.NamedThreadFactory;
@@ -32,7 +34,7 @@ public class StressDataLossModule extends AbstractStressModule
 {
     public StressDataLossModule(Config config, Bridge bridge)
     {
-        super(config, bridge, StressSettings.parse(new String[]{ "write", "n=10M" }));
+        super(config, bridge, StressSettings.parse(new String[]{ "write", "n=2M" }));
         executor = new DebuggableThreadPoolExecutor(2, Integer.MAX_VALUE, TimeUnit.SECONDS, new LinkedBlockingQueue<Runnable>(), new NamedThreadFactory("LargeStressWrite", Thread.NORM_PRIORITY));
     }
 
@@ -60,7 +62,9 @@ public class StressDataLossModule extends AbstractStressModule
     {
         public void run()
         {
-
+            Cluster cluster = Cluster.builder().addContactPoints("127.0.0.1").build();
+            Session session = cluster.connect("keyspace1");
+            session.execute("DELETE * FROM standard1");
         }
     }
 }
