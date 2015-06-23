@@ -17,6 +17,8 @@ package org.apache.cassandra.bridges.ccmbridge;
 
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.Map;
@@ -52,6 +54,8 @@ public class CCMBridge extends Bridge
     {
         this.nodeCount = nodeCount;
         this.ccmDir = Files.createTempDir();
+        removeOldCluster();
+        ArchiveClusterLogs.savetempDirectoryPath(CASSANDRA_DIR, ccmDir);
         execute("ccm create %s -n %d --install-dir %s", DEFAULT_CLUSTER_NAME, nodeCount, CASSANDRA_DIR);
     }
 
@@ -198,7 +202,7 @@ public class CCMBridge extends Bridge
             }
             catch (IOException e)
             {
-                e.printStackTrace();
+                throw new RuntimeException(e);
             }
         }
     }
@@ -209,4 +213,55 @@ public class CCMBridge extends Bridge
         executeAndPrint(fullCommand);
     }
 
+    public void removeOldCluster()
+    {
+        File filePath = new File(CASSANDRA_DIR + "/build/test/logs/validation/tempDir.txt");
+
+        if (filePath.exists())
+        {
+            try
+            {
+                BufferedReader br = new BufferedReader(new FileReader(filePath));
+                String line = br.readLine();
+                String tmpDir = null;
+
+                while(line != null){
+
+                    tmpDir = line;
+                    line = br.readLine();
+                }
+
+                File tempDir = new File(tmpDir);
+                if (tempDir.exists())
+                {
+                    if(tempDir.list().length > 0)
+                    {
+                        removeLiveCluster(tmpDir);
+                    }
+                }
+            }
+            catch (FileNotFoundException e)
+            {
+                throw new RuntimeException(e);
+            }
+            catch (IOException e)
+            {
+                throw new RuntimeException(e);
+            }
+        }
+    }
+
+    public void removeLiveCluster(String temp_dir)
+    {
+        String fullCommand = "ccm remove" + " --config-dir=" + temp_dir;
+        try
+        {
+            logger.debug("Executing: " + fullCommand);
+            Process p = runtime.exec(fullCommand, null, CASSANDRA_DIR);
+        }
+        catch (IOException e)
+        {
+            throw new RuntimeException(e);
+        }
+    }
 }

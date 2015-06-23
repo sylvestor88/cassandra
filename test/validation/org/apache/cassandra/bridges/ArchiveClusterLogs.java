@@ -20,10 +20,13 @@
  */
 package org.apache.cassandra.bridges;
 
+import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.FileWriter;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -89,6 +92,26 @@ public class ArchiveClusterLogs
                     zos.closeEntry();
                 }
             }
+        }
+        catch (IOException e)
+        {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public static void savetempDirectoryPath(File CASSANDRA_DIR, File tmp_Dir)
+    {
+        File filePath = new File(CASSANDRA_DIR + "/build/test/logs/validation/tempDir.txt");
+
+        try
+        {
+            if(!filePath.exists())
+            {
+                filePath.getParentFile().mkdirs();
+            }
+            PrintWriter pw = new PrintWriter(new BufferedWriter(new FileWriter(filePath, true)));
+            pw.println(tmp_Dir);
+            pw.close();
         }
         catch (IOException e)
         {
