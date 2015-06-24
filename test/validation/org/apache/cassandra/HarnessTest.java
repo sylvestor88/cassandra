@@ -54,7 +54,7 @@ public class HarnessTest
     private String yaml;
     private Bridge cluster;
 
-    @Parameterized.Parameters
+    @Parameterized.Parameters(name = "{0}")
     public static Collection<Object[]> discoverTests()
     {
 
