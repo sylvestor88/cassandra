@@ -22,7 +22,7 @@ package org.apache.cassandra.bridges;
 
 public abstract class Bridge
 {
-    protected final Runtime runtime = Runtime.getRuntime();
+    protected static final Runtime runtime = Runtime.getRuntime();
 
     public abstract void stop();
     public abstract void destroy();
