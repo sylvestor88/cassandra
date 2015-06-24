@@ -120,7 +120,7 @@ public class HarnessTest
         cluster.captureLogs(getTestName(yaml));
         String result = cluster.readClusterLogs();
         cluster.destroy();
-        Assert.assertTrue(result, result == null);
+        Assert.assertTrue(result, result == "");
     }
 
     public Module reflectModuleByName(String moduleName, Config config, Bridge bridge)
