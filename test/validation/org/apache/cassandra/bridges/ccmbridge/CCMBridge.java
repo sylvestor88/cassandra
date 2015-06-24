@@ -163,7 +163,7 @@ public class CCMBridge extends Bridge
 
             BufferedReader outReaderOutput = new BufferedReader(new InputStreamReader(p.getInputStream()));
             String line = outReaderOutput.readLine();
-            String output = null;
+            String output = "";
 
             while (line != null)
             {
@@ -264,4 +264,12 @@ public class CCMBridge extends Bridge
             throw new RuntimeException(e);
         }
     }
+
+    public String[] clusterEndpoints()
+    {
+        String result = executeAndRead("ccm liveset");
+        String[] endpoints = result.split(",");
+        return endpoints;
+    }
+
 }

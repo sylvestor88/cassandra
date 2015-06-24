@@ -28,5 +28,6 @@ public abstract class Bridge
     public abstract void destroy();
     public abstract String readClusterLogs();
     public abstract void captureLogs(String testName);
+    public abstract String[] clusterEndpoints();
     public abstract void nodeTool(int node, String command, String arguments);
 }
