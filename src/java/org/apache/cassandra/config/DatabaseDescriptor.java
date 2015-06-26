@@ -811,6 +811,11 @@ public class DatabaseDescriptor
         return tokensFromString(System.getProperty("cassandra.initial_token", conf.initial_token));
     }
 
+    public static String getAllocateTokensKeyspace()
+    {
+        return System.getProperty("cassandra.allocate_tokens_keyspace", conf.allocate_tokens_for_keyspace);
+    }
+
     public static Collection<String> tokensFromString(String tokenString)
     {
         List<String> tokens = new ArrayList<String>();
@@ -1549,6 +1554,12 @@ public class DatabaseDescriptor
         return conf.row_cache_size_in_mb;
     }
 
+    @VisibleForTesting
+    public static void setRowCacheSizeInMB(long val)
+    {
+        conf.row_cache_size_in_mb = val;
+    }
+
     public static int getRowCacheSavePeriod()
     {
         return conf.row_cache_save_period;
@@ -1692,5 +1703,10 @@ public class DatabaseDescriptor
     public static boolean enableUserDefinedFunctions()
     {
         return conf.enable_user_defined_functions;
+    }
+
+    public static int getWindowsTimerInterval()
+    {
+        return conf.windows_timer_interval;
     }
 }

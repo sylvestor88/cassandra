@@ -73,6 +73,8 @@ public class Config
     /* initial token in the ring */
     public String initial_token;
     public Integer num_tokens = 1;
+    /** Triggers automatic allocation of tokens if set, using the replication strategy of the referenced keyspace */
+    public String allocate_tokens_for_keyspace = null;
 
     public volatile Long request_timeout_in_ms = 10000L;
 
@@ -260,6 +262,8 @@ public class Config
      */
     public static final int otc_coalescing_window_us_default = 200;
     public int otc_coalescing_window_us = otc_coalescing_window_us_default;
+
+    public int windows_timer_interval = 0;
 
     public boolean enable_user_defined_functions = false;
 

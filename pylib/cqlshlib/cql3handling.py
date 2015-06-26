@@ -209,10 +209,20 @@ JUNK ::= /([ \t\r\f\v]+|(--|[/][/])[^\n\r]*([\n\r]|$)|[/][*].*?[*][/])/ ;
 <mapLiteral> ::= "{" <term> ":" <term> ( "," <term> ":" <term> )* "}"
                ;
 
-<userFunctionName> ::= <identifier> ( "." <identifier> )?
-               ;
+<anyFunctionName> ::= ( ksname=<cfOrKsName> dot="." )? udfname=<cfOrKsName> ;
 
-<functionName> ::= <userFunctionName>
+<userFunctionName> ::= ( ksname=<nonSystemKeyspaceName> dot="." )? udfname=<cfOrKsName> ;
+
+<refUserFunctionName> ::= udfname=<cfOrKsName> ;
+
+<userAggregateName> ::= ( ksname=<nonSystemKeyspaceName> dot="." )? udaname=<cfOrKsName> ;
+
+<functionAggregateName> ::= ( ksname=<nonSystemKeyspaceName> dot="." )? functionname=<cfOrKsName> ;
+
+<aggregateName> ::= <userAggregateName>
+                  ;
+
+<functionName> ::= <functionAggregateName>
                  | "TOKEN"
                  ;
 
@@ -490,6 +500,7 @@ def cf_prop_val_mapkey_completer(ctxt, cass):
             opts.add('base_time_seconds')
             opts.add('max_sstable_age_days')
             opts.add('timestamp_resolution')
+            opts.add('min_threshold')
         return map(escape_value, opts)
     return ()
 
@@ -644,6 +655,69 @@ syntax_rules += r'''
 <orderByClause> ::= [ordercol]=<cident> ( "ASC" | "DESC" )?
                   ;
 '''
+
+
+
+def udf_name_completer(ctxt, cass):
+    ks = ctxt.get_binding('ksname', None)
+    if ks is not None:
+        ks = dequote_name(ks)
+    try:
+        udfnames = cass.get_userfunction_names(ks)
+    except Exception:
+        if ks is None:
+            return ()
+        raise
+    return map(maybe_escape_name, udfnames)
+
+
+def uda_name_completer(ctxt, cass):
+    ks = ctxt.get_binding('ksname', None)
+    if ks is not None:
+        ks = dequote_name(ks)
+    try:
+        udanames = cass.get_useraggregate_names(ks)
+    except Exception:
+        if ks is None:
+            return ()
+        raise
+    return map(maybe_escape_name, udanames)
+
+
+def udf_uda_name_completer(ctxt, cass):
+    ks = ctxt.get_binding('ksname', None)
+    if ks is not None:
+        ks = dequote_name(ks)
+    try:
+        functionnames = cass.get_userfunction_names(ks) + cass.get_useraggregate_names(ks)
+    except Exception:
+        if ks is None:
+            return ()
+        raise
+    return map(maybe_escape_name, functionnames)
+
+
+def ref_udf_name_completer(ctxt, cass):
+    try:
+        udanames = cass.get_userfunction_names(None)
+    except Exception:
+        return ()
+    return map(maybe_escape_name, udanames)
+
+
+completer_for('functionAggregateName', 'ksname')(cf_ks_name_completer)
+completer_for('functionAggregateName', 'dot')(cf_ks_dot_completer)
+completer_for('functionAggregateName', 'functionname')(udf_uda_name_completer)
+completer_for('anyFunctionName', 'ksname')(cf_ks_name_completer)
+completer_for('anyFunctionName', 'dot')(cf_ks_dot_completer)
+completer_for('anyFunctionName', 'udfname')(udf_name_completer)
+completer_for('userFunctionName', 'ksname')(cf_ks_name_completer)
+completer_for('userFunctionName', 'dot')(cf_ks_dot_completer)
+completer_for('userFunctionName', 'udfname')(udf_name_completer)
+completer_for('refUserFunctionName', 'udfname')(ref_udf_name_completer)
+completer_for('userAggregateName', 'ksname')(cf_ks_dot_completer)
+completer_for('userAggregateName', 'dot')(cf_ks_dot_completer)
+completer_for('userAggregateName', 'udaname')(uda_name_completer)
 
 @completer_for('orderByClause', 'ordercol')
 def select_order_column_completer(ctxt, cass):
@@ -1034,13 +1108,13 @@ syntax_rules += r'''
 
 <createAggregateStatement> ::= "CREATE" ("OR" "REPLACE")? "AGGREGATE"
                             ("IF" "NOT" "EXISTS")?
-                            <userFunctionName>
+                            <userAggregateName>
                             ( "("
                                  ( <storageType> ( "," <storageType> )* )?
                               ")" )?
-                            "SFUNC" <identifier>
+                            "SFUNC" <refUserFunctionName>
                             "STYPE" <storageType>
-                            ( "FINALFUNC" <identifier> )?
+                            ( "FINALFUNC" <refUserFunctionName> )?
                             ( "INITCOND" <term> )?
                          ;
 
@@ -1078,7 +1152,7 @@ syntax_rules += r'''
 <dropFunctionStatement> ::= "DROP" "FUNCTION" ( "IF" "EXISTS" )? <userFunctionName>
                           ;
 
-<dropAggregateStatement> ::= "DROP" "AGGREGATE" ( "IF" "EXISTS" )? <userFunctionName>
+<dropAggregateStatement> ::= "DROP" "AGGREGATE" ( "IF" "EXISTS" )? <userAggregateName>
                           ;
 
 '''
@@ -1246,7 +1320,11 @@ syntax_rules += r'''
                  ;
 
 <functionResource> ::= ( "ALL" "FUNCTIONS" ("IN KEYSPACE" <keyspaceName>)? )
-                     | ("FUNCTION" <userFunctionName>)
+                     | ( "FUNCTION" <functionAggregateName>
+                           ( "(" ( newcol=<cident> <storageType>
+                             ( "," [newcolname]=<cident> <storageType> )* )?
+                           ")" )
+                       )
                      ;
 '''
 

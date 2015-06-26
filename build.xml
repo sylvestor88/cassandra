@@ -38,7 +38,6 @@
     <property name="build.src.resources" value="${basedir}/src/resources"/>
     <property name="build.src.gen-java" value="${basedir}/src/gen-java"/>
     <property name="build.lib" value="${basedir}/lib"/>
-    <property name="build.tools.lib" value="${basedir}/tools/lib"/>
     <property name="build.dir" value="${basedir}/build"/>
     <property name="build.dir.lib" value="${basedir}/build/lib"/>
     <property name="build.test.dir" value="${build.dir}/test"/>
@@ -133,6 +132,20 @@
       <format property="YEAR" pattern="yyyy"/>
     </tstamp>
 
+    <!-- Check if all tests are being run or just one. If it's all tests don't spam the console with test output.
+         If it's an individual test print the output from the test under the assumption someone is debugging the test
+         and wants to know what is going on without having to context switch to the log file that is generated.
+         Debug level output still needs to be retrieved from the log file.  -->
+    <script language="javascript">
+        if (project.getProperty("cassandra.keepBriefBrief") == null)
+        {
+            if (project.getProperty("test.name").equals("*Test"))
+                project.setProperty("cassandra.keepBriefBrief", "true");
+            else
+                project.setProperty("cassandra.keepBriefBrief", "false");
+        }
+    </script>
+
     <!--
          Add all the dependencies.
     -->
@@ -150,7 +163,7 @@
           <exclude name="**/*-sources.jar"/>
         </fileset>
     </path>
-	
+
 	<path id="cobertura.classpath">
 		<pathelement location="${cobertura.classes.dir}"/>
 	</path>
@@ -710,7 +723,7 @@
             description="Run in test mode.  Not for production use!">
       <java classname="org.apache.cassandra.service.CassandraDaemon" fork="true">
         <classpath>
-          <path refid="cassandra.classpath"/>  
+          <path refid="cassandra.classpath"/>
           <pathelement location="${test.conf}"/>
         </classpath>
         <jvmarg value="-Dstorage-config=${test.conf}"/>
@@ -770,9 +783,6 @@
                 <path refid="cassandra.classes" />
                 <path>
                     <fileset dir="${build.lib}">
-                        <include name="**/*.jar" />
-                    </fileset>
-                    <fileset dir="${build.tools.lib}">
                         <include name="**/*.jar" />
                     </fileset>
                 </path>
@@ -999,9 +1009,6 @@
         <fileset dir="${build.dir}/tools/lib/">
             <include name="*.jar" />
         </fileset>
-        <fileset dir="${build.tools.lib}">
-            <include name="*.jar" />
-        </fileset>
       </copy>
       <artifact:writepom pomRefId="dist-pom" 
             file="${build.dir}/${final.name}-dist.pom"/>
@@ -1134,8 +1141,8 @@
     <attribute name="filelist" default="" />
     <attribute name="poffset" default="0"/>
     <attribute name="testtag" default=""/>
-    
     <attribute name="usejacoco" default="no"/>
+
     <sequential>
       <condition property="additionalagent"
                  value="-javaagent:${build.dir.lib}/jars/jacocoagent.jar=destfile=${jacoco.execfile}"
@@ -1160,7 +1167,8 @@
         <jvmarg value="-Dcassandra.test.use_prepared=${cassandra.test.use_prepared}"/>
 	    <jvmarg value="-Dcassandra.test.offsetseed=@{poffset}"/>
         <jvmarg value="-Dcassandra.test.sstableformatdevelopment=true"/>
-        <jvmarg value="-Dcassandra.testtag=@{testtag}"/>
+        <jvmarg value="-Dcassandra.testtag=@{testtag}"/> 
+        <jvmarg value="-Dcassandra.keepBriefBrief=${cassandra.keepBriefBrief}" />
 	<optjvmargs/>
         <classpath>
           <path refid="cassandra.classpath" />
@@ -1922,9 +1930,6 @@
  	 <fileset dir="build/lib/jars">
   	    <include name="**/*.jar" />
   	 </fileset>
-  	 <fileset dir="tools/lib">
-  	     <include name="**/*.jar" />
-  	 </fileset>
   	</path>
   	<property name="eclipse-project-libs" refid="eclipse-project-libs-path"/>
   	<script language="javascript" classpathref="cassandra.classpath"> <![CDATA[
@@ -1998,7 +2003,7 @@
             <arg value="-properties" />
             <arg value="${ecj.properties}" />
             <arg value="-cp" />
-            <arg value="${toString:cassandra.classpath}" />
+            <arg value="${toString:cassandra.build.classpath}" />
             <arg value="${build.src.java}" />
         </java>
   </target>
