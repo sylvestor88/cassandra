@@ -271,5 +271,4 @@ public class CCMBridge extends Bridge
         String[] endpoints = result.split(",");
         return endpoints;
     }
-
 }
