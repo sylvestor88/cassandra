@@ -180,7 +180,7 @@ public class HarnessTest
         }
     }
 
-    public String getTestName(String yamlPath)
+    static String getTestName(String yamlPath)
     {
         Path p = Paths.get(yamlPath);
         String file = p.getFileName().toString();

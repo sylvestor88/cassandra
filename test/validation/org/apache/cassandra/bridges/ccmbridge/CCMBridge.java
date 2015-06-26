@@ -88,6 +88,12 @@ public class CCMBridge extends Bridge
 
     public void updateConf(Map<String, String> options)
     {
+        String invalid = checkConfig(options);
+        if(invalid != "")
+        {
+            throw new IllegalArgumentException("The following cassandrayaml parameters are invalid:" + "\n" + invalid);
+        }
+
         for (String key : options.keySet())
             execute("ccm updateconf %s:%s", key, options.get(key));
     }
@@ -272,4 +278,37 @@ public class CCMBridge extends Bridge
         return endpoints;
     }
 
+    public String checkConfig(Map<String, String> parameters)
+    {
+        File filePath = new File(CASSANDRA_DIR + "/conf/cassandra.yaml");
+        String invalid = "";
+
+        for(String key : parameters.keySet()){
+            try
+            {
+                BufferedReader br = new BufferedReader(new FileReader(filePath));
+                String line;
+                int count = 0;
+
+                while((line = br.readLine()) != null)
+                {
+                    if(line.indexOf(key) != -1 && line.indexOf("#") == -1)
+                    {
+                            count += 1;
+                    }
+                }
+
+                if(count < 1)
+                {
+                    invalid += key + "\n";
+                }
+            }
+            catch (IOException e)
+            {
+                throw new RuntimeException(e);
+            }
+        }
+
+        return invalid;
+    }
 }
