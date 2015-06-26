@@ -1,4 +1,3 @@
 nodeCount: 3
 modules:
     - LargeStressWriteModule
-    - StressDataLossModule
