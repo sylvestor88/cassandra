@@ -93,6 +93,11 @@ public class HarnessTest
             modules.add(module);
         }
 
+        runModuleGroup(modules);
+    }
+
+    public void runModuleGroup(ArrayList<Module> modules)
+    {
         ArrayList<Future> futures = new ArrayList<>(modules.size());
         for (Module module : modules)
         {
