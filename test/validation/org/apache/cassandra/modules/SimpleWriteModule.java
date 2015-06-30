@@ -20,7 +20,7 @@
  */
 package org.apache.cassandra.modules;
 
-import java.lang.Thread;
+import java.io.IOException;
 import java.util.concurrent.Future;
 
 import com.datastax.driver.core.BoundStatement;
