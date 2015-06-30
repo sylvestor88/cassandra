@@ -86,9 +86,9 @@ public class HarnessTest
     {
         Config config = loadConfig(getConfigURL(yaml));
         cluster = new CCMBridge(config);
-        ArrayList<Module> modules = new ArrayList<>();
         for (String[] moduleGroup : config.modules)
         {
+            ArrayList<Module> modules = new ArrayList<>();
             for (String moduleName : moduleGroup)
             {
                 Module module = reflectModuleByName(moduleName, config, cluster);
