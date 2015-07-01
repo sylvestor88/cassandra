@@ -20,8 +20,9 @@
  */
 package org.apache.cassandra.modules;
 
-import java.io.IOException;
 import java.util.concurrent.Future;
+
+import org.junit.Assert;
 
 import com.datastax.driver.core.BoundStatement;
 import com.datastax.driver.core.Cluster;
@@ -65,8 +66,7 @@ public class SimpleWriteModule extends Module
             }
 
             ResultSet results = session.execute("SELECT * FROM k.t");
-            //TODO: Add a way to pass messages back
-            //return results.all().size() == 10000;
+            Assert.assertEquals(results.all().size(), 10000);
         }
     }
 }
