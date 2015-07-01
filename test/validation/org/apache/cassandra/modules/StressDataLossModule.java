@@ -78,7 +78,17 @@ public class StressDataLossModule extends AbstractStressModule
             Cluster cluster = Cluster.builder().addContactPoints(bridge.clusterEndpoints()[0]).build();
             Session session = cluster.connect();
             session.execute("USE keyspace1");
-            session.execute("TRUNCATE standard1");
+            for(int i = 0; i < 10; i++)
+            {
+                session.execute("TRUNCATE standard1");
+                try
+                {
+                    Thread.sleep(1000);
+                }
+                catch (InterruptedException e)
+                {
+                }
+            }
         }
     }
 }
