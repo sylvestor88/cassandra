@@ -1,3 +1,7 @@
 nodeCount: 3
 modules:
-    - [LargeStressWriteModule]
+    - [ArbitraryStressOperationModule]
+    - [LargeStressWriteModule, StressDataLossModule]
+moduleArgs: !!map
+    ArbitraryStressOperationModule: !!map
+        stress_settings: write n=100
