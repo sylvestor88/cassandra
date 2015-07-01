@@ -50,7 +50,7 @@ public class SimpleWriteModule extends Module
     {
         public void run()
         {
-            Cluster cluster = Cluster.builder().addContactPoints("127.0.0.1").build();
+            Cluster cluster = Cluster.builder().addContactPoints(bridge.clusterEndpoints()[0]).build();
             Session session = cluster.connect();
             session.execute("CREATE KEYSPACE k WITH replication = {'class': 'SimpleStrategy' , 'replication_factor': 1}");
             session.execute("USE k");
