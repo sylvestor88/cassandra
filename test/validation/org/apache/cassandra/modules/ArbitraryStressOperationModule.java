@@ -32,7 +32,7 @@ public class ArbitraryStressOperationModule extends AbstractStressModule
     public ArbitraryStressOperationModule(Config config, Bridge bridge)
     {
         super(config, bridge, StressSettings.parse(config.moduleArgs.get("ArbitraryStressOperationModule")
-                                                            .get("stress_settings").split(" ")));
+                                                            .get("stress_settings").concat(" -log file=StressOp.log").split(" ")));
         executor = new DebuggableThreadPoolExecutor("ArbitraryStressOperation", Thread.NORM_PRIORITY);
     }
 }
