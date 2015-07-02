@@ -61,7 +61,7 @@ public class HarnessTest
     public static final String MODULE_PACKAGE = "org.apache.cassandra.modules.";
     private String yaml;
     private Bridge cluster;
-    private Map<Module, List<String>> failures = new HashMap<>();
+    private Map<String, List<String>> failures = new HashMap<>();
     private DebuggableThreadPoolExecutor executor = new DebuggableThreadPoolExecutor("Harness", Thread.NORM_PRIORITY);
 
     @Parameterized.Parameters(name = "{0}")
@@ -113,9 +113,9 @@ public class HarnessTest
     @After
     public void tearDown()
     {
-        for(Module module : failures.keySet())
+        for(String moduleName : failures.keySet())
         {
-            failures.get(module).forEach(logger::error);
+            failures.get(moduleName).forEach(logger::error);
         }
         cluster.stop();
         cluster.captureLogs(getTestName(yaml));
@@ -126,9 +126,9 @@ public class HarnessTest
             Assert.fail();
     }
 
-    public void signalFailure(Module module, String message)
+    public void signalFailure(String moduleName, String message)
     {
-        newTask(new FailureTask(module, message));
+        newTask(new FailureTask(moduleName, message));
     }
 
     private Future newTask(Runnable task)
@@ -225,26 +225,26 @@ public class HarnessTest
 
     class FailureTask implements Runnable
     {
-        private Module module;
+        private String moduleName;
         private String message;
 
-        public FailureTask(Module module, String message)
+        public FailureTask(String moduleName, String message)
         {
-            this.module = module;
+            this.moduleName = moduleName;
             this.message = message;
         }
 
         public void run()
         {
-            if (failures.containsKey(module))
+            if (failures.containsKey(moduleName))
             {
-                failures.get(module).add(message);
+                failures.get(moduleName).add(message);
             }
             else
             {
                 ArrayList<String> failure = new ArrayList<>();
                 failure.add(message);
-                failures.put(module, failure);
+                failures.put(moduleName, failure);
             }
         }
     }
