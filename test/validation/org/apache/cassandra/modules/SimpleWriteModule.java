@@ -66,7 +66,14 @@ public class SimpleWriteModule extends Module
             }
 
             ResultSet results = session.execute("SELECT * FROM k.t");
-            Assert.assertEquals(results.all().size(), 10000);
+            try
+            {
+                Assert.assertEquals(results.all().size(), 10000);
+            }
+            catch (AssertionError e)
+            {
+                harness.signalFailure("SimpleWriteModule", e.getMessage());
+            }
         }
     }
 }
