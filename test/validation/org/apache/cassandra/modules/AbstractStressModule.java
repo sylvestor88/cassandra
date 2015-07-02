@@ -20,8 +20,7 @@ package org.apache.cassandra.modules;
 import java.io.FileNotFoundException;
 import java.util.concurrent.Future;
 
-import org.apache.cassandra.bridges.Bridge;
-import org.apache.cassandra.concurrent.DebuggableThreadPoolExecutor;
+import org.apache.cassandra.HarnessContext;
 import org.apache.cassandra.htest.Config;
 import org.apache.cassandra.stress.StressAction;
 import org.apache.cassandra.stress.settings.StressSettings;
@@ -30,9 +29,9 @@ public abstract class AbstractStressModule extends Module
 {
     protected StressSettings settings;
 
-    public AbstractStressModule(Config config, Bridge bridge, StressSettings settings)
+    public AbstractStressModule(Config config, HarnessContext context, StressSettings settings)
     {
-        super(config, bridge);
+        super(config, context);
         this.settings = settings;
     }
 

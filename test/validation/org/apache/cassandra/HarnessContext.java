@@ -15,32 +15,18 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.cassandra.modules;
+package org.apache.cassandra;
 
-import java.util.concurrent.Future;
+import org.apache.cassandra.bridges.Bridge;
 
-import org.apache.cassandra.HarnessContext;
-import org.apache.cassandra.concurrent.DebuggableThreadPoolExecutor;
-import org.apache.cassandra.htest.Config;
-
-public class SimpleCompactModule extends Module
+public class HarnessContext
 {
-    public SimpleCompactModule(Config config, HarnessContext context)
-    {
-        super(config, context);
-        executor = new DebuggableThreadPoolExecutor("SimpleCompact", Thread.NORM_PRIORITY);
-    }
+    public final HarnessTest harness;
+    public final Bridge bridge;
 
-    public Future validate()
+    public HarnessContext(HarnessTest harness, Bridge bridge)
     {
-        return newTask(new ValidateTask());
-    }
-
-    class ValidateTask implements Runnable
-    {
-        public void run()
-        {
-
-        }
+        this.harness = harness;
+        this.bridge = bridge;
     }
 }

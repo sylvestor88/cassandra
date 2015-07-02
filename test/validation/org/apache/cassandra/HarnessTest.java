@@ -46,6 +46,7 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.bridges.Bridge;
 import org.apache.cassandra.bridges.ccmbridge.CCMBridge;
+import org.apache.cassandra.concurrent.DebuggableThreadPoolExecutor;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.htest.Config;
 import org.apache.cassandra.io.util.FileUtils;
@@ -60,7 +61,8 @@ public class HarnessTest
     public static final String MODULE_PACKAGE = "org.apache.cassandra.modules.";
     private String yaml;
     private Bridge cluster;
-    private static Map<Module, List<String>> failures = new HashMap<>();
+    private Map<Module, List<String>> failures = new HashMap<>();
+    private DebuggableThreadPoolExecutor executor = new DebuggableThreadPoolExecutor("Harness", Thread.NORM_PRIORITY);
 
     @Parameterized.Parameters(name = "{0}")
     public static Collection<Object[]> discoverTests()
@@ -94,12 +96,13 @@ public class HarnessTest
     {
         Config config = loadConfig(getConfigURL(yaml));
         cluster = new CCMBridge(config);
+        HarnessContext context = new HarnessContext(this, cluster);
         for (String[] moduleGroup : config.modules)
         {
             ArrayList<Module> modules = new ArrayList<>();
             for (String moduleName : moduleGroup)
             {
-                Module module = reflectModuleByName(moduleName, config, cluster);
+                Module module = reflectModuleByName(moduleName, config, context);
                 modules.add(module);
             }
 
@@ -107,18 +110,30 @@ public class HarnessTest
         }
     }
 
-    public static synchronized void signalFailure(Module module, String message)
+    @After
+    public void tearDown()
     {
-        if (failures.containsKey(module))
+        for(Module module : failures.keySet())
         {
-            failures.get(module).add(message);
+            failures.get(module).forEach(logger::error);
         }
-        else
-        {
-            ArrayList<String> failure = new ArrayList<>();
-            failure.add(message);
-            failures.put(module, failure);
-        }
+        cluster.stop();
+        cluster.captureLogs(getTestName(yaml));
+        String result = cluster.readClusterLogs();
+        cluster.destroy();
+        Assert.assertTrue(result, result == "");
+        if(!failures.isEmpty())
+            Assert.fail();
+    }
+
+    public void signalFailure(Module module, String message)
+    {
+        newTask(new FailureTask(module, message));
+    }
+
+    private Future newTask(Runnable task)
+    {
+        return executor.submit(task);
     }
 
     public void runModuleGroup(ArrayList<Module> modules)
@@ -143,28 +158,12 @@ public class HarnessTest
         }
     }
 
-    @After
-    public void tearDown()
-    {
-        for(Module module : failures.keySet())
-        {
-            failures.get(module).forEach(logger::error);
-        }
-        cluster.stop();
-        cluster.captureLogs(getTestName(yaml));
-        String result = cluster.readClusterLogs();
-        cluster.destroy();
-        Assert.assertTrue(result, result == "");
-        if(!failures.isEmpty())
-            Assert.fail();
-    }
-
-    public Module reflectModuleByName(String moduleName, Config config, Bridge bridge)
+    public Module reflectModuleByName(String moduleName, Config config, HarnessContext context)
     {
         try
         {
             return (Module) Class.forName(MODULE_PACKAGE + moduleName)
-                                 .getDeclaredConstructor(new Class[]{Config.class, Bridge.class}).newInstance(config, bridge);
+                                 .getDeclaredConstructor(new Class[]{Config.class, HarnessContext.class}).newInstance(config, context);
         }
         // ClassNotFoundException
         // NoSuchMethodException
@@ -222,5 +221,31 @@ public class HarnessTest
         String file = p.getFileName().toString();
         String testName = file.substring(0, file.lastIndexOf('.'));
         return testName;
+    }
+
+    class FailureTask implements Runnable
+    {
+        private Module module;
+        private String message;
+
+        public FailureTask(Module module, String message)
+        {
+            this.module = module;
+            this.message = message;
+        }
+
+        public void run()
+        {
+            if (failures.containsKey(module))
+            {
+                failures.get(module).add(message);
+            }
+            else
+            {
+                ArrayList<String> failure = new ArrayList<>();
+                failure.add(message);
+                failures.put(module, failure);
+            }
+        }
     }
 }

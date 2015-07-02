@@ -27,7 +27,7 @@ import org.slf4j.LoggerFactory;
 
 import com.datastax.driver.core.Cluster;
 import com.datastax.driver.core.Session;
-import org.apache.cassandra.bridges.Bridge;
+import org.apache.cassandra.HarnessContext;
 import org.apache.cassandra.concurrent.DebuggableThreadPoolExecutor;
 import org.apache.cassandra.concurrent.NamedThreadFactory;
 import org.apache.cassandra.htest.Config;
@@ -37,9 +37,9 @@ public class StressDataLossModule extends AbstractStressModule
 {
     private static final Logger logger = LoggerFactory.getLogger(StressDataLossModule.class);
 
-    public StressDataLossModule(Config config, Bridge bridge)
+    public StressDataLossModule(Config config, HarnessContext context)
     {
-        super(config, bridge, StressSettings.parse(new String[]{ "write", "n=2M", "-log", "file=StressDataLoss.log" }));
+        super(config, context, StressSettings.parse(new String[]{ "write", "n=2M", "-log", "file=StressDataLoss.log" }));
         executor = new DebuggableThreadPoolExecutor(2, Integer.MAX_VALUE, TimeUnit.SECONDS, new LinkedBlockingQueue<Runnable>(), new NamedThreadFactory("LargeStressWrite", Thread.NORM_PRIORITY));
     }
 

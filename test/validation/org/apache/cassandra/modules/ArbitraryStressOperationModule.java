@@ -20,7 +20,7 @@ package org.apache.cassandra.modules;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.bridges.Bridge;
+import org.apache.cassandra.HarnessContext;
 import org.apache.cassandra.concurrent.DebuggableThreadPoolExecutor;
 import org.apache.cassandra.htest.Config;
 import org.apache.cassandra.stress.settings.StressSettings;
@@ -29,10 +29,10 @@ public class ArbitraryStressOperationModule extends AbstractStressModule
 {
     private static final Logger logger = LoggerFactory.getLogger(ArbitraryStressOperationModule.class);
 
-    public ArbitraryStressOperationModule(Config config, Bridge bridge)
+    public ArbitraryStressOperationModule(Config config, HarnessContext context)
     {
-        super(config, bridge, StressSettings.parse(config.moduleArgs.get("ArbitraryStressOperationModule")
-                                                            .get("stress_settings").concat(" -log file=StressOp.log").split(" ")));
+        super(config, context, StressSettings.parse(config.moduleArgs.get("ArbitraryStressOperationModule")
+                                                                     .get("stress_settings").concat(" -log file=StressOp.log").split(" ")));
         executor = new DebuggableThreadPoolExecutor("ArbitraryStressOperation", Thread.NORM_PRIORITY);
     }
 }

@@ -23,6 +23,8 @@ package org.apache.cassandra.modules;
 
 import java.util.concurrent.Future;
 
+import org.apache.cassandra.HarnessContext;
+import org.apache.cassandra.HarnessTest;
 import org.apache.cassandra.bridges.Bridge;
 import org.apache.cassandra.concurrent.DebuggableThreadPoolExecutor;
 import org.apache.cassandra.htest.Config;
@@ -32,11 +34,13 @@ public abstract class Module
     DebuggableThreadPoolExecutor executor;
     final Config config;
     final Bridge bridge;
+    final HarnessTest harness;
 
-    public Module(Config config, Bridge bridge)
+    public Module(Config config, HarnessContext context)
     {
         this.config = config;
-        this.bridge = bridge;
+        this.bridge = context.bridge;
+        this.harness = context.harness;
     }
 
     public abstract Future validate();
