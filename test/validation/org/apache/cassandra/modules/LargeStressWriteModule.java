@@ -17,9 +17,15 @@
  */
 package org.apache.cassandra.modules;
 
+import java.util.concurrent.Future;
+
+import org.junit.Assert;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.datastax.driver.core.Cluster;
+import com.datastax.driver.core.ResultSet;
+import com.datastax.driver.core.Session;
 import org.apache.cassandra.HarnessContext;
 import org.apache.cassandra.concurrent.DebuggableThreadPoolExecutor;
 import org.apache.cassandra.htest.Config;
@@ -33,5 +39,41 @@ public class LargeStressWriteModule extends AbstractStressModule
     {
         super(config, context, StressSettings.parse(new String[]{"write", "n=2M", "-log", "file=LargeStressWrite.log"}));
         executor = new DebuggableThreadPoolExecutor("LargeStressWrite", Thread.NORM_PRIORITY);
+    }
+
+    public Future validate()
+    {
+        Future future = newTask(stress(this.settings));
+        try
+        {
+            future.get();
+        }
+        catch (Exception e)
+        {
+            logger.error(e.getMessage());
+            harness.signalFailure("LargeStressWriteModule", e.getMessage());
+        }
+
+        return newTask(new ValidateTask());
+    }
+
+    class ValidateTask implements Runnable
+    {
+        public void run()
+        {
+
+            Cluster cluster = Cluster.builder().addContactPoints(bridge.clusterEndpoints()[0]).build();
+            Session session = cluster.connect();
+
+            ResultSet results = session.execute("SELECT * FROM keyspace1.standard1");
+            try
+            {
+                Assert.assertEquals(2000000, results.all().size());
+            }
+            catch (AssertionError e)
+            {
+                harness.signalFailure("LargeStressWriteModule", e.getMessage());
+            }
+        }
     }
 }
