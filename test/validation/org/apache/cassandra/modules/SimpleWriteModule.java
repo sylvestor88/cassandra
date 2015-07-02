@@ -68,7 +68,7 @@ public class SimpleWriteModule extends Module
             ResultSet results = session.execute("SELECT * FROM k.t");
             try
             {
-                Assert.assertEquals(results.all().size(), 10000);
+                Assert.assertEquals(10000, results.all().size());
             }
             catch (AssertionError e)
             {
