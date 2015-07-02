@@ -29,6 +29,9 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Future;
 
 import com.google.common.io.ByteStreams;
@@ -57,6 +60,7 @@ public class HarnessTest
     public static final String MODULE_PACKAGE = "org.apache.cassandra.modules.";
     private String yaml;
     private Bridge cluster;
+    private static Map<Module, List<String>> failures = new HashMap<>();
 
     @Parameterized.Parameters(name = "{0}")
     public static Collection<Object[]> discoverTests()
@@ -103,6 +107,20 @@ public class HarnessTest
         }
     }
 
+    public static synchronized void signalFailure(Module module, String message)
+    {
+        if (failures.containsKey(module))
+        {
+            failures.get(module).add(message);
+        }
+        else
+        {
+            ArrayList<String> failure = new ArrayList<>();
+            failure.add(message);
+            failures.put(module, failure);
+        }
+    }
+
     public void runModuleGroup(ArrayList<Module> modules)
     {
         ArrayList<Future> futures = new ArrayList<>(modules.size());
@@ -128,11 +146,17 @@ public class HarnessTest
     @After
     public void tearDown()
     {
+        for(Module module : failures.keySet())
+        {
+            failures.get(module).forEach(logger::error);
+        }
         cluster.stop();
         cluster.captureLogs(getTestName(yaml));
         String result = cluster.readClusterLogs();
         cluster.destroy();
         Assert.assertTrue(result, result == "");
+        if(!failures.isEmpty())
+            Assert.fail();
     }
 
     public Module reflectModuleByName(String moduleName, Config config, Bridge bridge)
