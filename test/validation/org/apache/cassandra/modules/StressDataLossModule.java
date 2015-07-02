@@ -22,6 +22,9 @@ import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.datastax.driver.core.Cluster;
 import com.datastax.driver.core.Session;
 import org.apache.cassandra.bridges.Bridge;
@@ -32,9 +35,11 @@ import org.apache.cassandra.stress.settings.StressSettings;
 
 public class StressDataLossModule extends AbstractStressModule
 {
+    private static final Logger logger = LoggerFactory.getLogger(StressDataLossModule.class);
+
     public StressDataLossModule(Config config, Bridge bridge)
     {
-        super(config, bridge, StressSettings.parse(new String[]{ "write", "n=2M" }));
+        super(config, bridge, StressSettings.parse(new String[]{ "write", "n=2M", "-log", "file=StressDataLoss.log" }));
         executor = new DebuggableThreadPoolExecutor(2, Integer.MAX_VALUE, TimeUnit.SECONDS, new LinkedBlockingQueue<Runnable>(), new NamedThreadFactory("LargeStressWrite", Thread.NORM_PRIORITY));
     }
 

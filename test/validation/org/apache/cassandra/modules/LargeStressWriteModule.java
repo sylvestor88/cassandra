@@ -17,6 +17,9 @@
  */
 package org.apache.cassandra.modules;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.apache.cassandra.bridges.Bridge;
 import org.apache.cassandra.concurrent.DebuggableThreadPoolExecutor;
 import org.apache.cassandra.htest.Config;
@@ -24,9 +27,10 @@ import org.apache.cassandra.stress.settings.StressSettings;
 
 public class LargeStressWriteModule extends AbstractStressModule
 {
+    private static final Logger logger = LoggerFactory.getLogger(LargeStressWriteModule.class);
     public LargeStressWriteModule(Config config, Bridge bridge)
     {
-        super(config, bridge, StressSettings.parse(new String[]{"write", "n=2M"}));
+        super(config, bridge, StressSettings.parse(new String[]{"write", "n=2M", "-log", "file=LargeStressWrite.log"}));
         executor = new DebuggableThreadPoolExecutor("LargeStressWrite", Thread.NORM_PRIORITY);
     }
 }

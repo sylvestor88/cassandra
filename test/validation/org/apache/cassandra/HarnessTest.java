@@ -38,6 +38,9 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.apache.cassandra.bridges.Bridge;
 import org.apache.cassandra.bridges.ccmbridge.CCMBridge;
 import org.apache.cassandra.exceptions.ConfigurationException;
@@ -50,6 +53,7 @@ import org.yaml.snakeyaml.error.YAMLException;
 @RunWith(Parameterized.class)
 public class HarnessTest
 {
+    private static final Logger logger = LoggerFactory.getLogger(HarnessTest.class);
     public static final String MODULE_PACKAGE = "org.apache.cassandra.modules.";
     private String yaml;
     private Bridge cluster;
