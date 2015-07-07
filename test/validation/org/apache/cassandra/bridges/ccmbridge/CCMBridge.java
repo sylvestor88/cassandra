@@ -80,7 +80,7 @@ public class CCMBridge extends Bridge
         execute("ccm stop --not-gently");
     }
 
-    public String readClusterLogs()
+    public String readClusterLogs(String testName)
     {
         String result = executeAndRead("ccm checklogerror");
         return result;
@@ -170,7 +170,6 @@ public class CCMBridge extends Bridge
                 output += line + "\n";
                 line = outReaderOutput.readLine();
             }
-
             return output;
         }
         catch (IOException e)
@@ -209,7 +208,15 @@ public class CCMBridge extends Bridge
 
     public void nodeTool(int node, String command, String arguments)
     {
-        String fullCommand = "ccm node" + node + " nodetool " + command + " " + arguments;
+        String fullCommand;
+        if(arguments == "")
+        {
+            fullCommand = "ccm node" + node + " nodetool " + command;
+        }
+        else
+        {
+            fullCommand = "ccm node" + node + " nodetool " + command + " " + arguments;
+        }
         executeAndPrint(fullCommand);
     }
 
@@ -268,6 +275,7 @@ public class CCMBridge extends Bridge
     public String[] clusterEndpoints()
     {
         String result = executeAndRead("ccm liveset");
+        result = result.substring(0, result.length() - 1);
         String[] endpoints = result.split(",");
         return endpoints;
     }
