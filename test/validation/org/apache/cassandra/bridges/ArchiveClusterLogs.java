@@ -27,6 +27,8 @@ import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -40,7 +42,7 @@ public class ArchiveClusterLogs
 
     public static void zipExistingDirectory(String existDir)
     {
-        String sourceFolderName =  existDir;
+        String sourceFolderName = existDir;
         long unixTime = System.currentTimeMillis() / 1000L;
         String outputFileName = existDir + "_" + unixTime + ".zip";
 
@@ -58,7 +60,7 @@ public class ArchiveClusterLogs
         }
     }
 
-    private static void compressFiles(ZipOutputStream zos,String folderName,String baseFolderName)
+    private static void compressFiles(ZipOutputStream zos, String folderName, String baseFolderName)
     {
         File f = new File(folderName);
 
@@ -105,7 +107,7 @@ public class ArchiveClusterLogs
 
         try
         {
-            if(!filePath.exists())
+            if (!filePath.exists())
             {
                 filePath.getParentFile().mkdirs();
             }
@@ -117,5 +119,32 @@ public class ArchiveClusterLogs
         {
             throw new RuntimeException(e);
         }
+    }
+
+    public static String getFullPath(File file, String folder)
+    {
+        File logFolder = new File(folder);
+
+        if(!logFolder.exists()){
+            logFolder.mkdirs();
+        }
+
+        return file.getAbsolutePath();
+    }
+
+    public static boolean countErrors(String errorLogs)
+    {
+        int count = 0;
+        Pattern p = Pattern.compile("ERROR");
+        Matcher m = p.matcher(errorLogs);
+
+        while (m.find()) {
+            count++;
+        }
+
+        if (count > 6)
+            return true;
+        else
+            return false;
     }
 }
