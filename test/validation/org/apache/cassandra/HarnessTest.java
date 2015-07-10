@@ -119,7 +119,7 @@ public class HarnessTest
         }
         cluster.stop();
         cluster.captureLogs(getTestName(yaml));
-        String result = cluster.readClusterLogs();
+        String result = cluster.readClusterLogs(getTestName(yaml));
         cluster.destroy();
         Assert.assertTrue(result, result == "");
         if(!failures.isEmpty())

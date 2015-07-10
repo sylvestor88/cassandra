@@ -55,7 +55,8 @@ public class CToolBridge extends Bridge
             execute("ctool reset " + DEFAULT_CLUSTER_NAME);
             execute("ctool install %s -b cassandra-2.1.7 cassandra", DEFAULT_CLUSTER_NAME);
         }
-        else{
+        else
+        {
             execute("ctool launch %s %d", DEFAULT_CLUSTER_NAME, nodeCount);
             execute("ctool install %s -b cassandra-2.1.7 cassandra", DEFAULT_CLUSTER_NAME);
         }
@@ -239,4 +240,23 @@ public class CToolBridge extends Bridge
         String[] endpoints = result.split(" ");
         return endpoints;
     }
+
+    public void ssTableSplit(int node, String options, String keyspace_path)
+    {
+        String fullCommand;
+        if (options == "")
+        {
+            fullCommand = "ctool run " + DEFAULT_CLUSTER_NAME + " " + node + "\'/home/automaton/cassandra*/tools/bin/sstablesplit /home/automaton/cassandra*/data/data/" + keyspace_path + "\'";
+        }
+        else{
+            fullCommand = "ctool run " + DEFAULT_CLUSTER_NAME + " " + node + " \'/home/automaton/cassandra*/tools/bin/sstablesplit " + options + " /home/automaton/cassandra*/data/data/" + keyspace_path + "\'";
+        }
+        executeAndPrint(fullCommand);
+    }
+
+    public void ssTableMetaData(int node, String keyspace_path)
+    {
+        executeAndPrint("ctool run " + DEFAULT_CLUSTER_NAME + " " + node + " \'/home/automaton/cassandra*/tools/bin/sstablemetadata /home/automaton/cassandra*/data/data/" + keyspace_path + "\'");
+    }
+
 }

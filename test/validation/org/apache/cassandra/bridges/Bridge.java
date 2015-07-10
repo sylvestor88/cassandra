@@ -30,4 +30,6 @@ public abstract class Bridge
     public abstract void captureLogs(String testName);
     public abstract String[] clusterEndpoints();
     public abstract void nodeTool(int node, String command, String arguments);
+    public abstract void ssTableSplit(int node, String options, String keyspace);
+    public abstract void ssTableMetaData(int node, String keyspace_path);
 }
