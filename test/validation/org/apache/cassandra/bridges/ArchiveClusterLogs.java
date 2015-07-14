@@ -147,4 +147,20 @@ public class ArchiveClusterLogs
         else
             return false;
     }
+
+    public static String[] metaDataFilesFormatter(String files)
+    {
+        files = files.substring(1, files.length()-1);
+        String[] list = files.split(", ");
+        String[] newlist = new String[list.length];
+        int i = 0;
+
+        for(String each : list)
+        {
+            String edit = each.substring(1, each.length()-1);
+            newlist[i] = edit;
+            i++;
+        }
+        return newlist;
+    }
 }

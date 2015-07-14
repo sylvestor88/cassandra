@@ -31,6 +31,7 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.bridges.ArchiveClusterLogs;
 import org.apache.cassandra.bridges.Bridge;
 import org.apache.cassandra.htest.Config;
+import org.apache.cassandra.tools.SSTableMetadataViewer;
 
 public class CCMBridge extends Bridge
 {
@@ -178,6 +179,23 @@ public class CCMBridge extends Bridge
         }
     }
 
+    private String executeAndReturn(String command, Object... args)
+    {
+        try
+        {
+            String fullCommand = String.format(command, args) + " --config-dir=" + ccmDir;;
+            Process p = runtime.exec(fullCommand, null, CASSANDRA_DIR);
+
+            BufferedReader outReaderOutput = new BufferedReader(new InputStreamReader(p.getInputStream()));
+            String line = outReaderOutput.readLine();
+            return line;
+        }
+        catch (IOException e)
+        {
+            throw new RuntimeException(e);
+        }
+    }
+
     public void captureLogs(String testName)
     {
         String clusterLogsPath = ccmDir + "/" + DEFAULT_CLUSTER_NAME;
@@ -279,4 +297,51 @@ public class CCMBridge extends Bridge
         String[] endpoints = result.split(",");
         return endpoints;
     }
+
+    public void ssTableSplit(int node, String options, String keyspace)
+    {
+        String fullCommand;
+        if(options == "")
+        {
+            fullCommand = "ccm node" + node + " sstablesplit";
+        }
+        else
+        {
+            fullCommand = "ccm node" + node + " sstablesplit " + options;
+        }
+        executeAndPrint(fullCommand);
+    }
+
+    public void ssTableMetaData(int node, String keyspace)
+    {
+        String fullCommand;
+        if(keyspace == "")
+        {
+            fullCommand = "ccm node" + node + " getsstables";
+        }
+        else
+        {
+            fullCommand = "ccm node" + node + " getsstables " + keyspace;
+        }
+
+        String sstableFiles = executeAndReturn(fullCommand);
+
+        if(sstableFiles.length() > 2)
+        {
+            String[] files = ArchiveClusterLogs.metaDataFilesFormatter(sstableFiles);
+            try
+            {
+                SSTableMetadataViewer.main(files);
+            }
+            catch (Exception e)
+            {
+                throw new RuntimeException(e);
+            }
+        }
+        else
+        {
+            System.out.println("No SSTables Found.");
+        }
+    }
 }
+
