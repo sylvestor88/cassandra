@@ -37,13 +37,13 @@ public class LargeStressWriteModule extends AbstractStressModule
 
     public LargeStressWriteModule(Config config, HarnessContext context)
     {
-        super(config, context, StressSettings.parse(new String[]{"write", "n=2M", "-log", "file=LargeStressWrite.log"}));
+        super(config, context, "write n=2M -log file=LargeStressWrite.log");
         executor = new DebuggableThreadPoolExecutor("LargeStressWrite", Thread.NORM_PRIORITY);
     }
 
     public Future validate()
     {
-        Future future = newTask(stress(this.settings));
+        Future future = newTask(new StressTask());
         try
         {
             future.get();

@@ -39,14 +39,15 @@ public class StressDataLossModule extends AbstractStressModule
 
     public StressDataLossModule(Config config, HarnessContext context)
     {
-        super(config, context, StressSettings.parse(new String[]{ "write", "n=2M", "-log", "file=StressDataLoss.log" }));
+        super(config, context, "write n=2M -log file=StressDataLoss.log" );
         executor = new DebuggableThreadPoolExecutor(2, Integer.MAX_VALUE, TimeUnit.SECONDS, new LinkedBlockingQueue<Runnable>(), new NamedThreadFactory("LargeStressWrite", Thread.NORM_PRIORITY));
     }
 
     @Override
     public Future validate()
     {
-        Future setupFuture = newTask(stress(StressSettings.parse(new String[]{"write", "n=10K"})));
+        settings = "write n=10K";
+        Future setupFuture = newTask(new StressTask());
         try
         {
             setupFuture.get();
@@ -59,7 +60,8 @@ public class StressDataLossModule extends AbstractStressModule
         {
             throw new RuntimeException(e);
         }
-        Future stressFuture = newTask(stress(this.settings));
+        settings = "write n=2M -log file=StressDataLoss.log";
+        Future stressFuture = newTask(new StressTask());
         Future dataFuture = newTask(new DataLossTask());
         try
         {

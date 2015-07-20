@@ -31,8 +31,8 @@ public class ArbitraryStressOperationModule extends AbstractStressModule
 
     public ArbitraryStressOperationModule(Config config, HarnessContext context)
     {
-        super(config, context, StressSettings.parse(config.moduleArgs.get("ArbitraryStressOperationModule")
-                                                                     .get("stress_settings").concat(" -log file=StressOp.log").split(" ")));
+        super(config, context, config.moduleArgs.get("ArbitraryStressOperationModule")
+                                                                     .get("stress_settings").concat(" -log file=StressOp.log"));
         executor = new DebuggableThreadPoolExecutor("ArbitraryStressOperation", Thread.NORM_PRIORITY);
     }
 }
