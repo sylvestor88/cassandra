@@ -22,14 +22,12 @@ import java.util.concurrent.Future;
 
 import org.apache.cassandra.HarnessContext;
 import org.apache.cassandra.htest.Config;
-import org.apache.cassandra.stress.StressAction;
-import org.apache.cassandra.stress.settings.StressSettings;
 
 public abstract class AbstractStressModule extends Module
 {
-    protected StressSettings settings;
+    protected String settings;
 
-    public AbstractStressModule(Config config, HarnessContext context, StressSettings settings)
+    public AbstractStressModule(Config config, HarnessContext context, String settings)
     {
         super(config, context);
         this.settings = settings;
@@ -37,18 +35,14 @@ public abstract class AbstractStressModule extends Module
 
     public Future validate()
     {
-        return newTask(stress(this.settings));
+        return newTask(new StressTask());
     }
 
-    StressAction stress(StressSettings settings)
+    class StressTask implements Runnable
     {
-        try
+        public void run()
         {
-            return new StressAction(settings, settings.log.getOutput());
-        }
-        catch (FileNotFoundException e)
-        {
-            throw new RuntimeException(e);
+            bridge.stress(settings);
         }
     }
 }

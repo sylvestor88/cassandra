@@ -32,4 +32,5 @@ public abstract class Bridge
     public abstract void nodeTool(int node, String command, String arguments);
     public abstract void ssTableSplit(int node, String options, String keyspace);
     public abstract void ssTableMetaData(int node, String keyspace_path);
+    public abstract String stress(String options);
 }

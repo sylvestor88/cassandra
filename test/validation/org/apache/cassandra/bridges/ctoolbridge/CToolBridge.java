@@ -30,6 +30,7 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.bridges.ArchiveClusterLogs;
 import org.apache.cassandra.bridges.Bridge;
 import org.apache.cassandra.htest.Config;
+import sun.reflect.generics.reflectiveObjects.NotImplementedException;
 
 public class CToolBridge extends Bridge
 {
@@ -259,4 +260,8 @@ public class CToolBridge extends Bridge
         executeAndPrint("ctool run " + DEFAULT_CLUSTER_NAME + " " + node + " \'/home/automaton/cassandra*/tools/bin/sstablemetadata /home/automaton/cassandra*/data/data/" + keyspace_path + "\'");
     }
 
+    public String stress(String options)
+    {
+        throw new NotImplementedException();
+    }
 }

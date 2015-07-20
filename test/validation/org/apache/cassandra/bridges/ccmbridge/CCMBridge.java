@@ -343,5 +343,11 @@ public class CCMBridge extends Bridge
             System.out.println("No SSTables Found.");
         }
     }
+
+    public String stress(String options)
+    {
+        String fullCommand = "ccm stress " + options;
+        return executeAndRead(fullCommand);
+    }
 }
 
