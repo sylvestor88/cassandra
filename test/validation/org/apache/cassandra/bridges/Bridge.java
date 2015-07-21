@@ -29,8 +29,8 @@ public abstract class Bridge
     public abstract String readClusterLogs(String testName);
     public abstract void captureLogs(String testName);
     public abstract String[] clusterEndpoints();
-    public abstract void nodeTool(int node, String command, String arguments);
-    public abstract void ssTableSplit(int node, String options, String keyspace);
-    public abstract void ssTableMetaData(int node, String keyspace_path);
+    public abstract void nodeTool(String node, String command, String arguments);
+    public abstract void ssTableSplit(String node, String options, String keyspace);
+    public abstract void ssTableMetaData(String node, String keyspace_path);
     public abstract String stress(String options);
 }
