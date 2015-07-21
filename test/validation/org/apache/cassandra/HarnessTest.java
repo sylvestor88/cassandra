@@ -61,6 +61,7 @@ public class HarnessTest
     public static final String MODULE_PACKAGE = "org.apache.cassandra.modules.";
     private String yaml;
     private Bridge cluster;
+    ArrayList<Future> module_exceptions = new ArrayList<>();
     private Map<String, List<String>> failures = new HashMap<>();
     private DebuggableThreadPoolExecutor executor = new DebuggableThreadPoolExecutor("Harness", Thread.NORM_PRIORITY);
 
@@ -128,7 +129,8 @@ public class HarnessTest
 
     public void signalFailure(String moduleName, String message)
     {
-        newTask(new FailureTask(moduleName, message));
+        Future exception = newTask(new FailureTask(moduleName, message));
+        module_exceptions.add(exception);
     }
 
     private Future newTask(Runnable task)
@@ -148,6 +150,11 @@ public class HarnessTest
         try
         {
             for (Future future : futures)
+            {
+                future.get();
+            }
+
+            for (Future future : module_exceptions)
             {
                 future.get();
             }
@@ -236,6 +243,7 @@ public class HarnessTest
 
         public void run()
         {
+            this.message = this.moduleName + ": " + this.message;
             if (failures.containsKey(moduleName))
             {
                 failures.get(moduleName).add(message);
