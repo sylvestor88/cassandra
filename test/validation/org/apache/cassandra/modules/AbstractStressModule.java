@@ -43,6 +43,7 @@ public abstract class AbstractStressModule extends Module
         public void run()
         {
             bridge.stress(settings);
+            //TODO: Validate the output of stress
         }
     }
 }

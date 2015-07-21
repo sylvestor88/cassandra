@@ -179,11 +179,36 @@ public class CCMBridge extends Bridge
         }
     }
 
+    private String executeAndReadWithToolOptions(String command, String options)
+    {
+        try
+        {
+            String fullCommand = command + " --config-dir=" + ccmDir + String.format(" -- %s", options);
+            logger.debug("Executing: " + fullCommand);
+            Process p = runtime.exec(fullCommand, null, CASSANDRA_DIR);
+
+            BufferedReader outReaderOutput = new BufferedReader(new InputStreamReader(p.getInputStream()));
+            String line = outReaderOutput.readLine();
+            String output = "";
+
+            while (line != null)
+            {
+                output += line + "\n";
+                line = outReaderOutput.readLine();
+            }
+            return output;
+        }
+        catch (IOException e)
+        {
+            throw new RuntimeException(e);
+        }
+    }
+
     private String executeAndReturn(String command, Object... args)
     {
         try
         {
-            String fullCommand = String.format(command, args) + " --config-dir=" + ccmDir;;
+            String fullCommand = String.format(command, args) + " --config-dir=" + ccmDir;
             Process p = runtime.exec(fullCommand, null, CASSANDRA_DIR);
 
             BufferedReader outReaderOutput = new BufferedReader(new InputStreamReader(p.getInputStream()));
@@ -346,8 +371,8 @@ public class CCMBridge extends Bridge
 
     public String stress(String options)
     {
-        String fullCommand = "ccm stress " + options;
-        return executeAndRead(fullCommand);
+        String command = "ccm stress ";
+        return executeAndReadWithToolOptions(command, options);
     }
 }
 
