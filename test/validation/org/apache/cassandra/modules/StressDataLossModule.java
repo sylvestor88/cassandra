@@ -40,7 +40,7 @@ public class StressDataLossModule extends AbstractStressModule
     public StressDataLossModule(Config config, HarnessContext context)
     {
         super(config, context, "write n=2M -log file=StressDataLoss.log" );
-        executor = new DebuggableThreadPoolExecutor(2, Integer.MAX_VALUE, TimeUnit.SECONDS, new LinkedBlockingQueue<Runnable>(), new NamedThreadFactory("LargeStressWrite", Thread.NORM_PRIORITY));
+        executor = new DebuggableThreadPoolExecutor(2, Integer.MAX_VALUE, TimeUnit.SECONDS, new LinkedBlockingQueue<Runnable>(), new NamedThreadFactory("StressDataLoss", Thread.NORM_PRIORITY));
     }
 
     @Override
