@@ -42,8 +42,22 @@ public abstract class AbstractStressModule extends Module
     {
         public void run()
         {
-            bridge.stress(settings);
-            //TODO: Validate the output of stress
+            String output = bridge.stress(settings);
+            handleOutput(output);
+        }
+
+        private void handleOutput(String output)
+        {
+            //TODO: Return only the subset of output w/ the failure
+            if (output.contains("Exception"))
+            {
+                harness.signalFailure(this.getClass().getName(), output);
+            }
+
+            if (output.contains("Data returned was not validated"))
+            {
+                harness.signalFailure(this.getClass().getName(), output);
+            }
         }
     }
 }
