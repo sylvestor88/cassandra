@@ -60,6 +60,7 @@ public class HarnessTest
     private static final Logger logger = LoggerFactory.getLogger(HarnessTest.class);
     public static final String MODULE_PACKAGE = "org.apache.cassandra.modules.";
     private String yaml;
+    private Config config;
     private Bridge cluster;
     ArrayList<Future> module_exceptions = new ArrayList<>();
     private Map<String, List<String>> failures = new HashMap<>();
@@ -95,7 +96,7 @@ public class HarnessTest
     @Test
     public void harness()
     {
-        Config config = loadConfig(getConfigURL(yaml));
+        config = loadConfig(getConfigURL(yaml));
         cluster = new CCMBridge(config);
         HarnessContext context = new HarnessContext(this, cluster);
         for (String[] moduleGroup : config.modules)
@@ -128,8 +129,41 @@ public class HarnessTest
 
     public void parseFailures(Map<String, List<String>> failures)
     {
+        for(String moduleName : failures.keySet())
+        {
+            for(String failure : failures.get(moduleName))
+            {
+                for(String error : config.ignoredErrors)
+                {
+                    if(failure.contains(error))
+                    {
+                        failures.get(moduleName).remove(failure);
+                    }
+                }
+
+                for(String error : config.requiredErrors)
+                {
+                    if(failure.contains(error))
+                    {
+                        config.requiredErrors.remove(error);
+                    }
+                }
+            }
+            if (failures.get(moduleName).isEmpty())
+            {
+                failures.remove(moduleName);
+            }
+        }
+
         if(!failures.isEmpty())
+        {
             Assert.fail();
+        }
+
+        if(!config.requiredErrors.isEmpty())
+        {
+            Assert.fail();
+        }
     }
 
     public void signalFailure(String moduleName, String message)

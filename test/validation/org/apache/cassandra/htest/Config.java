@@ -20,6 +20,7 @@
  */
 package org.apache.cassandra.htest;
 
+import java.util.List;
 import java.util.Map;
 
 public class Config
@@ -28,6 +29,6 @@ public class Config
     public String[][] modules;
     public Map<String, String> cassandrayaml;
     public Map<String, Map<String, String>> moduleArgs;
-    public String[] ignoredErrors;
-    public String[] requiredErrors;
+    public List<String> ignoredErrors;
+    public List<String> requiredErrors;
 }
