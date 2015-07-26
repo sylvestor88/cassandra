@@ -28,4 +28,6 @@ public class Config
     public String[][] modules;
     public Map<String, String> cassandrayaml;
     public Map<String, Map<String, String>> moduleArgs;
+    public String[] ignoredErrors;
+    public String[] requiredErrors;
 }
