@@ -123,6 +123,11 @@ public class HarnessTest
         String result = cluster.readClusterLogs(getTestName(yaml));
         cluster.destroy();
         Assert.assertTrue(result, result == "");
+        parseFailures(failures);
+    }
+
+    public void parseFailures(Map<String, List<String>> failures)
+    {
         if(!failures.isEmpty())
             Assert.fail();
     }
