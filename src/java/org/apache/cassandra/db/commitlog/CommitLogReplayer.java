@@ -18,7 +18,6 @@
  */
 package org.apache.cassandra.db.commitlog;
 
-import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.EOFException;
 import java.io.File;
@@ -28,6 +27,7 @@ import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.zip.CRC32;
 
 import com.google.common.base.Predicate;
 import com.google.common.collect.HashMultimap;
@@ -36,31 +36,30 @@ import com.google.common.collect.Multimap;
 import com.google.common.collect.Ordering;
 
 import org.apache.commons.lang3.StringUtils;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import com.github.tjake.ICRC32;
-
 import org.apache.cassandra.concurrent.Stage;
 import org.apache.cassandra.concurrent.StageManager;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.rows.SerializationHelper;
+import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.io.compress.CompressionParameters;
 import org.apache.cassandra.io.compress.ICompressor;
 import org.apache.cassandra.io.util.ByteBufferDataInput;
-import org.apache.cassandra.io.util.FastByteArrayInputStream;
+import org.apache.cassandra.io.util.DataInputBuffer;
 import org.apache.cassandra.io.util.FileDataInput;
 import org.apache.cassandra.io.util.FileUtils;
+import org.apache.cassandra.io.util.NIODataInputStream;
 import org.apache.cassandra.io.util.RandomAccessReader;
-import org.apache.cassandra.utils.ByteBufferUtil;
-import org.apache.cassandra.utils.CRC32Factory;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.JVMStabilityInspector;
 import org.apache.cassandra.utils.WrappedRunnable;
 import org.cliffc.high_scale_lib.NonBlockingHashSet;
+
+import static org.apache.cassandra.utils.FBUtilities.updateChecksumInt;
 
 public class CommitLogReplayer
 {
@@ -74,7 +73,7 @@ public class CommitLogReplayer
     private final AtomicInteger replayedCount;
     private final Map<UUID, ReplayPosition> cfPositions;
     private final ReplayPosition globalPosition;
-    private final ICRC32 checksum;
+    private final CRC32 checksum;
     private byte[] buffer;
     private byte[] uncompressedBuffer;
 
@@ -89,7 +88,7 @@ public class CommitLogReplayer
         this.invalidMutations = new HashMap<UUID, AtomicInteger>();
         // count the number of replayed mutation. We don't really care about atomicity, but we need it to be a reference.
         this.replayedCount = new AtomicInteger();
-        this.checksum = CRC32Factory.instance.create();
+        this.checksum = new CRC32();
         this.cfPositions = cfPositions;
         this.globalPosition = globalPosition;
         this.replayFilter = replayFilter;
@@ -171,10 +170,10 @@ public class CommitLogReplayer
             return -1;
         }
         reader.seek(offset);
-        ICRC32 crc = CRC32Factory.instance.create();
-        crc.updateInt((int) (descriptor.id & 0xFFFFFFFFL));
-        crc.updateInt((int) (descriptor.id >>> 32));
-        crc.updateInt((int) reader.getPosition());
+        CRC32 crc = new CRC32();
+        updateChecksumInt(crc, (int) (descriptor.id & 0xFFFFFFFFL));
+        updateChecksumInt(crc, (int) (descriptor.id >>> 32));
+        updateChecksumInt(crc, (int) reader.getPosition());
         int end = reader.readInt();
         long filecrc = reader.readInt() & 0xffffffffL;
         if (crc.getValue() != filecrc)
@@ -192,10 +191,10 @@ public class CommitLogReplayer
         }
         return end;
     }
-    
+
     abstract static class ReplayFilter
     {
-        public abstract Iterable<ColumnFamily> filter(Mutation mutation);
+        public abstract Iterable<PartitionUpdate> filter(Mutation mutation);
 
         public abstract boolean includes(CFMetaData metadata);
 
@@ -227,9 +226,9 @@ public class CommitLogReplayer
 
     private static class AlwaysReplayFilter extends ReplayFilter
     {
-        public Iterable<ColumnFamily> filter(Mutation mutation)
+        public Iterable<PartitionUpdate> filter(Mutation mutation)
         {
-            return mutation.getColumnFamilies();
+            return mutation.getPartitionUpdates();
         }
 
         public boolean includes(CFMetaData metadata)
@@ -247,17 +246,17 @@ public class CommitLogReplayer
             this.toReplay = toReplay;
         }
 
-        public Iterable<ColumnFamily> filter(Mutation mutation)
+        public Iterable<PartitionUpdate> filter(Mutation mutation)
         {
             final Collection<String> cfNames = toReplay.get(mutation.getKeyspaceName());
             if (cfNames == null)
                 return Collections.emptySet();
 
-            return Iterables.filter(mutation.getColumnFamilies(), new Predicate<ColumnFamily>()
+            return Iterables.filter(mutation.getPartitionUpdates(), new Predicate<PartitionUpdate>()
             {
-                public boolean apply(ColumnFamily cf)
+                public boolean apply(PartitionUpdate upd)
                 {
-                    return cfNames.contains(cf.metadata().cfName);
+                    return cfNames.contains(upd.metadata().cfName);
                 }
             });
         }
@@ -330,7 +329,8 @@ public class CommitLogReplayer
                 {
                     int uncompressedLength = reader.readInt();
                     replayEnd = replayPos + uncompressedLength;
-                } else
+                }
+                else
                 {
                     replayEnd = end;
                 }
@@ -435,7 +435,7 @@ public class CommitLogReplayer
                 if (desc.version < CommitLogDescriptor.VERSION_20)
                     checksum.update(serializedSize);
                 else
-                    checksum.updateInt(serializedSize);
+                    updateChecksumInt(checksum, serializedSize);
 
                 if (checksum.getValue() != claimedSizeChecksum)
                     return false;
@@ -474,15 +474,14 @@ public class CommitLogReplayer
     {
 
         final Mutation mutation;
-        try (FastByteArrayInputStream bufIn = new FastByteArrayInputStream(inputBuffer, 0, size))
+        try (NIODataInputStream bufIn = new DataInputBuffer(inputBuffer, 0, size))
         {
-            mutation = Mutation.serializer.deserialize(new DataInputStream(bufIn),
+            mutation = Mutation.serializer.deserialize(bufIn,
                                                        desc.getMessagingVersion(),
-                                                       ColumnSerializer.Flag.LOCAL);
+                                                       SerializationHelper.Flag.LOCAL);
             // doublecheck that what we read is [still] valid for the current schema
-            for (ColumnFamily cf : mutation.getColumnFamilies())
-                for (Cell cell : cf)
-                    cf.getComparator().validate(cell.name());
+            for (PartitionUpdate upd : mutation.getPartitionUpdates())
+                upd.validate();
         }
         catch (UnknownColumnFamilyException ex)
         {
@@ -515,7 +514,7 @@ public class CommitLogReplayer
         }
 
         if (logger.isDebugEnabled())
-            logger.debug("replaying mutation for {}.{}: {}", mutation.getKeyspaceName(), ByteBufferUtil.bytesToHex(mutation.key()), "{" + StringUtils.join(mutation.getColumnFamilies().iterator(), ", ") + "}");
+            logger.debug("replaying mutation for {}.{}: {}", mutation.getKeyspaceName(), mutation.key(), "{" + StringUtils.join(mutation.getPartitionUpdates().iterator(), ", ") + "}");
 
         Runnable runnable = new WrappedRunnable()
         {
@@ -534,12 +533,12 @@ public class CommitLogReplayer
                 // or c) are part of a cf that was dropped.
                 // Keep in mind that the cf.name() is suspect. do every thing based on the cfid instead.
                 Mutation newMutation = null;
-                for (ColumnFamily columnFamily : replayFilter.filter(mutation))
+                for (PartitionUpdate update : replayFilter.filter(mutation))
                 {
-                    if (Schema.instance.getCF(columnFamily.id()) == null)
+                    if (Schema.instance.getCF(update.metadata().cfId) == null)
                         continue; // dropped
 
-                    ReplayPosition rp = cfPositions.get(columnFamily.id());
+                    ReplayPosition rp = cfPositions.get(update.metadata().cfId);
 
                     // replay if current segment is newer than last flushed one or,
                     // if it is the last known segment, if we are after the replay position
@@ -547,7 +546,7 @@ public class CommitLogReplayer
                     {
                         if (newMutation == null)
                             newMutation = new Mutation(mutation.getKeyspaceName(), mutation.key());
-                        newMutation.add(columnFamily);
+                        newMutation.add(update);
                         replayedCount.incrementAndGet();
                     }
                 }
@@ -571,9 +570,9 @@ public class CommitLogReplayer
     {
         long restoreTarget = CommitLog.instance.archiver.restorePointInTime;
 
-        for (ColumnFamily families : fm.getColumnFamilies())
+        for (PartitionUpdate upd : fm.getPartitionUpdates())
         {
-            if (CommitLog.instance.archiver.precision.toMillis(families.maxTimestamp()) > restoreTarget)
+            if (CommitLog.instance.archiver.precision.toMillis(upd.maxTimestamp()) > restoreTarget)
                 return true;
         }
         return false;

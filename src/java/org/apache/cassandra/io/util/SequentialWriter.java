@@ -79,6 +79,8 @@ public class SequentialWriter extends OutputStream implements WritableByteChanne
     // due to lack of multiple-inheritance, we proxy our transactional implementation
     protected class TransactionalProxy extends AbstractTransactional
     {
+        private boolean deleteFile = true;
+
         @Override
         protected Throwable doPreCleanup(Throwable accumulate)
         {
@@ -118,7 +120,10 @@ public class SequentialWriter extends OutputStream implements WritableByteChanne
 
         protected Throwable doAbort(Throwable accumulate)
         {
-            return FileUtils.deleteWithConfirm(filePath, false, accumulate);
+            if (deleteFile)
+                return FileUtils.deleteWithConfirm(filePath, false, accumulate);
+            else
+                return accumulate;
         }
     }
 
@@ -187,12 +192,30 @@ public class SequentialWriter extends OutputStream implements WritableByteChanne
 
     public void write(byte[] buffer) throws IOException
     {
-        write(ByteBuffer.wrap(buffer, 0, buffer.length));
+        write(buffer, 0, buffer.length);
     }
 
     public void write(byte[] data, int offset, int length) throws IOException
     {
-        write(ByteBuffer.wrap(data, offset, length));
+        if (buffer == null)
+            throw new ClosedChannelException();
+
+        int position = offset;
+        int remaining = length;
+        while (remaining > 0)
+        {
+            if (!buffer.hasRemaining())
+                reBuffer();
+
+            int toCopy = Math.min(remaining, buffer.remaining());
+            buffer.put(data, position, toCopy);
+
+            remaining -= toCopy;
+            position += toCopy;
+
+            isDirty = true;
+            syncNeeded = true;
+        }
     }
 
     public int write(ByteBuffer src) throws IOException
@@ -467,6 +490,11 @@ public class SequentialWriter extends OutputStream implements WritableByteChanne
     protected TransactionalProxy txnProxy()
     {
         return new TransactionalProxy();
+    }
+
+    public void deleteFile(boolean val)
+    {
+        txnProxy.deleteFile = val;
     }
 
     public void releaseFileHandle()

@@ -23,8 +23,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.composites.CellName;
-import org.apache.cassandra.db.composites.Composite;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.BytesType;
 import org.apache.cassandra.db.marshal.CounterColumnType;
@@ -319,14 +317,13 @@ public abstract class Constants
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, ColumnFamily cf, Composite prefix, UpdateParameters params) throws InvalidRequestException
+        public void execute(DecoratedKey partitionKey, UpdateParameters params) throws InvalidRequestException
         {
             ByteBuffer value = t.bindAndGet(params.options);
-            if (value != ByteBufferUtil.UNSET_BYTE_BUFFER) // use reference equality and not object equality
-            {
-                CellName cname = cf.getComparator().create(prefix, column);
-                cf.addColumn(value == null ? params.makeTombstone(cname) : params.makeColumn(cname, value));
-            }
+            if (value == null)
+                params.addTombstone(column);
+            else if (value != ByteBufferUtil.UNSET_BYTE_BUFFER) // use reference equality and not object equality
+                params.addCell(column, value);
         }
     }
 
@@ -337,7 +334,7 @@ public abstract class Constants
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, ColumnFamily cf, Composite prefix, UpdateParameters params) throws InvalidRequestException
+        public void execute(DecoratedKey partitionKey, UpdateParameters params) throws InvalidRequestException
         {
             ByteBuffer bytes = t.bindAndGet(params.options);
             if (bytes == null)
@@ -346,8 +343,7 @@ public abstract class Constants
                 return;
 
             long increment = ByteBufferUtil.toLong(bytes);
-            CellName cname = cf.getComparator().create(prefix, column);
-            cf.addColumn(params.makeCounter(cname, increment));
+            params.addCounter(column, increment);
         }
     }
 
@@ -358,7 +354,7 @@ public abstract class Constants
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, ColumnFamily cf, Composite prefix, UpdateParameters params) throws InvalidRequestException
+        public void execute(DecoratedKey partitionKey, UpdateParameters params) throws InvalidRequestException
         {
             ByteBuffer bytes = t.bindAndGet(params.options);
             if (bytes == null)
@@ -370,8 +366,7 @@ public abstract class Constants
             if (increment == Long.MIN_VALUE)
                 throw new InvalidRequestException("The negation of " + increment + " overflows supported counter precision (signed 8 bytes integer)");
 
-            CellName cname = cf.getComparator().create(prefix, column);
-            cf.addColumn(params.makeCounter(cname, -increment));
+            params.addCounter(column, -increment);
         }
     }
 
@@ -384,13 +379,12 @@ public abstract class Constants
             super(column, null);
         }
 
-        public void execute(ByteBuffer rowKey, ColumnFamily cf, Composite prefix, UpdateParameters params) throws InvalidRequestException
+        public void execute(DecoratedKey partitionKey, UpdateParameters params) throws InvalidRequestException
         {
-            CellName cname = cf.getComparator().create(prefix, column);
             if (column.type.isMultiCell())
-                cf.addAtom(params.makeRangeTombstone(cname.slice()));
+                params.setComplexDeletionTime(column);
             else
-                cf.addColumn(params.makeTombstone(cname));
+                params.addTombstone(column);
         }
-    };
+    }
 }

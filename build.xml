@@ -95,7 +95,7 @@
     <property name="maven-repository-url" value="https://repository.apache.org/content/repositories/snapshots"/>
     <property name="maven-repository-id" value="apache.snapshots.https"/>
 
-    <property name="test.timeout" value="60000" />
+    <property name="test.timeout" value="1200000" />
     <property name="test.long.timeout" value="600000" />
     <property name="test.burn.timeout" value="600000" />
 
@@ -135,11 +135,13 @@
     <!-- Check if all tests are being run or just one. If it's all tests don't spam the console with test output.
          If it's an individual test print the output from the test under the assumption someone is debugging the test
          and wants to know what is going on without having to context switch to the log file that is generated.
+         This may be overridden when running a single test by adding the -Dtest.brief.output property to the ant
+         command (its value is unimportant).
          Debug level output still needs to be retrieved from the log file.  -->
     <script language="javascript">
         if (project.getProperty("cassandra.keepBriefBrief") == null)
         {
-            if (project.getProperty("test.name").equals("*Test"))
+            if (project.getProperty("test.name").equals("*Test") || project.getProperty("test.brief.output"))
                 project.setProperty("cassandra.keepBriefBrief", "true");
             else
                 project.setProperty("cassandra.keepBriefBrief", "false");
@@ -267,6 +269,8 @@
       <echo>Downloading Maven ANT Tasks...</echo>
       <get src="${maven-ant-tasks.url}/${maven-ant-tasks.version}/maven-ant-tasks-${maven-ant-tasks.version}.jar"
            dest="${build.dir}/maven-ant-tasks-${maven-ant-tasks.version}.jar" usetimestamp="true" />
+      <copy file="${build.dir}/maven-ant-tasks-${maven-ant-tasks.version}.jar"
+            tofile="${maven-ant-tasks.local}/${maven-ant-tasks.version}/maven-ant-tasks-${maven-ant-tasks.version}.jar"/>
     </target>
 
     <target name="maven-ant-tasks-init" depends="init,maven-ant-tasks-download" unless="maven-ant-tasks.initialized"
@@ -339,7 +343,7 @@
           <dependency groupId="org.xerial.snappy" artifactId="snappy-java" version="1.1.1.7"/>
           <dependency groupId="net.jpountz.lz4" artifactId="lz4" version="1.3.0"/>
           <dependency groupId="com.ning" artifactId="compress-lzf" version="0.8.4"/>
-          <dependency groupId="com.google.guava" artifactId="guava" version="16.0"/>
+          <dependency groupId="com.google.guava" artifactId="guava" version="18.0"/>
           <dependency groupId="commons-cli" artifactId="commons-cli" version="1.1"/>
           <dependency groupId="commons-codec" artifactId="commons-codec" version="1.2"/>
           <dependency groupId="org.apache.commons" artifactId="commons-lang3" version="3.1"/>
@@ -361,7 +365,7 @@
           <dependency groupId="com.googlecode.json-simple" artifactId="json-simple" version="1.1"/>
           <dependency groupId="com.boundary" artifactId="high-scale-lib" version="1.0.6"/>
           <dependency groupId="com.github.jbellis" artifactId="jamm" version="0.3.0"/>
-	  	  <dependency groupId="com.github.tjake" artifactId="crc32ex" version="0.1.1"/>
+	
           <dependency groupId="com.thinkaurelius.thrift" artifactId="thrift-server" version="0.3.7">
             <exclusion groupId="org.slf4j" artifactId="slf4j-log4j12"/>
           </dependency>
@@ -377,13 +381,23 @@
           	<exclusion groupId="org.mortbay.jetty" artifactId="servlet-api"/>
           	<exclusion groupId="commons-logging" artifactId="commons-logging"/>
           	<exclusion groupId="org.eclipse.jdt" artifactId="core"/>
+		    <exclusion groupId="ant" artifactId="ant"/>
           </dependency>
-          <dependency groupId="org.apache.hadoop" artifactId="hadoop-minicluster" version="1.0.3"/>
-          <dependency groupId="org.apache.pig" artifactId="pig" version="0.12.1"/>
+          <dependency groupId="org.apache.hadoop" artifactId="hadoop-minicluster" version="1.0.3">
+		    <exclusion groupId="asm" artifactId="asm"/> <!-- this is the outdated version 3.1 -->
+          </dependency>
+          <dependency groupId="org.apache.pig" artifactId="pig" version="0.12.1">
+          	<exclusion groupId="org.mortbay.jetty" artifactId="jetty"/>
+            <exclusion groupId="hsqldb" artifactId="hsqldb"/> <!-- outdated version -->
+            <exclusion groupId="antlr" artifactId="antlr"/> <!-- outdated version -->
+          </dependency>
           <dependency groupId="net.java.dev.jna" artifactId="jna" version="4.0.0"/>
 
           <dependency groupId="net.sourceforge.cobertura" artifactId="cobertura" version="${cobertura.version}">
             <exclusion groupId="xerces" artifactId="xercesImpl"/>
+          	<exclusion groupId="org.mortbay.jetty" artifactId="jetty"/> <!-- older version, also via hadoop-core + pig -->
+          	<exclusion groupId="org.mortbay.jetty" artifactId="jetty-util"/> <!-- older version, also via hadoop-core + pig -->
+            <exclusion groupId="org.apache.ant" artifactId="ant"/> <!-- older version 1.8.3 -->
           </dependency>
           <dependency groupId="org.jacoco" artifactId="org.jacoco.agent" version="${jacoco.version}"/>
           <dependency groupId="org.jacoco" artifactId="org.jacoco.ant" version="${jacoco.version}"/>
@@ -404,14 +418,14 @@
           <dependency groupId="com.datastax.cassandra" artifactId="cassandra-driver-core" version="2.1.5" classifier="shaded" />
           -->
           <dependency groupId="org.eclipse.jdt.core.compiler" artifactId="ecj" version="4.4.2" />
-          <dependency groupId="org.caffinitas.ohc" artifactId="ohc-core" version="0.3.4" />
-          <dependency groupId="net.sf.supercsv" artifactId="super-csv" version="2.1.0" />
-	      <dependency groupId="net.ju-n.compile-command-annotations" artifactId="compile-command-annotations" version="1.2.0" />
+          <dependency groupId="org.caffinitas.ohc" artifactId="ohc-core" version="0.4" />
+          <dependency groupId="org.caffinitas.ohc" artifactId="ohc-core-j8" version="0.4" />
+          <dependency groupId="net.ju-n.compile-command-annotations" artifactId="compile-command-annotations" version="1.2.0" />
           <dependency groupId="org.fusesource" artifactId="sigar" version="1.6.4">
           	<exclusion groupId="log4j" artifactId="log4j"/>
           </dependency>
           <dependency groupId="joda-time" artifactId="joda-time" version="2.4" />
-        	
+
         </dependencyManagement>
         <developer id="alakshman" name="Avinash Lakshman"/>
         <developer id="aleksey" name="Aleksey Yeschenko"/>
@@ -434,6 +448,7 @@
         <developer id="pmalik" name="Prashant Malik"/>
       	<developer id="rstupp" name="Robert Stupp"/>
         <developer id="scode" name="Peter Schuller"/>
+        <developer id="beobal" name="Sam Tunnicliffe"/>
         <developer id="slebresne" name="Sylvain Lebresne"/>
         <developer id="tylerhobbs" name="Tyler Hobbs"/>
         <developer id="vijay" name="Vijay Parthasarathy"/>
@@ -454,6 +469,34 @@
         <dependency groupId="org.apache.pig" artifactId="pig"/>
       	<dependency groupId="com.google.code.findbugs" artifactId="jsr305"/>
         <dependency groupId="org.antlr" artifactId="antlr"/>
+        <!-- TODO CASSANDRA-9543
+        <dependency groupId="com.datastax.cassandra" artifactId="cassandra-driver-core" classifier="shaded"/>
+        -->
+        <dependency groupId="org.eclipse.jdt.core.compiler" artifactId="ecj"/>
+        <dependency groupId="org.caffinitas.ohc" artifactId="ohc-core" version="0.4" />
+        <dependency groupId="org.caffinitas.ohc" artifactId="ohc-core-j8" version="0.4" />
+        <dependency groupId="org.openjdk.jmh" artifactId="jmh-core"/>
+        <dependency groupId="org.openjdk.jmh" artifactId="jmh-generator-annprocess"/>
+        <dependency groupId="net.ju-n.compile-command-annotations" artifactId="compile-command-annotations"/>
+        <dependency groupId="org.apache.ant" artifactId="ant-junit" version="1.9.4" />
+      </artifact:pom>
+      <!-- this build-deps-pom-sources "artifact" is the same as build-deps-pom but only with those
+           artifacts that have "-source.jar" files -->
+      <artifact:pom id="build-deps-pom-sources"
+                    artifactId="cassandra-build-deps">
+        <parent groupId="org.apache.cassandra"
+                artifactId="cassandra-parent"
+                version="${version}"/>
+        <dependency groupId="junit" artifactId="junit"/>
+        <dependency groupId="org.apache.pig" artifactId="pig">
+          <exclusion groupId="xmlenc" artifactId="xmlenc"/>
+          <exclusion groupId="tomcat" artifactId="jasper-runtime"/>
+          <exclusion groupId="tomcat" artifactId="jasper-compiler"/>
+          <exclusion groupId="org.eclipse.jdt" artifactId="core"/>
+          <exclusion groupId="net.sf.kosmosfs" artifactId="kfs"/>
+          <exclusion groupId="hsqldb" artifactId="hsqldb"/>
+          <exclusion groupId="antlr" artifactId="antlr"/>
+        </dependency>
         <!-- TODO CASSANDRA-9543
         <dependency groupId="com.datastax.cassandra" artifactId="cassandra-driver-core" classifier="shaded"/>
         -->
@@ -518,7 +561,6 @@
         <dependency groupId="com.addthis.metrics" artifactId="reporter-config3"/>
         <dependency groupId="com.thinkaurelius.thrift" artifactId="thrift-server" version="0.3.5"/>
         <dependency groupId="com.clearspring.analytics" artifactId="stream" version="2.5.2" />
-        <dependency groupId="net.sf.supercsv" artifactId="super-csv" version="2.1.0" />
 
         <dependency groupId="ch.qos.logback" artifactId="logback-core"/>
         <dependency groupId="ch.qos.logback" artifactId="logback-classic"/>
@@ -539,7 +581,7 @@
         
         <!-- don't need jamm unless running a server in which case it needs to be a -javagent to be used anyway -->
         <dependency groupId="com.github.jbellis" artifactId="jamm"/>
-		<dependency groupId="com.github.tjake" artifactId="crc32ex"/>
+
         <dependency groupId="io.netty" artifactId="netty-all"/>
       	
       	<dependency groupId="joda-time" artifactId="joda-time" version="2.4" />
@@ -586,11 +628,20 @@
     </target>
 
     <target name="maven-ant-tasks-retrieve-build" depends="maven-declare-dependencies" unless="without.maven">
+      <!-- retrieve artifacts -->
       <artifact:dependencies pomRefId="build-deps-pom"
-                             filesetId="build-dependency-jars" 
-                             sourcesFilesetId="build-dependency-sources" 
-                             cacheDependencyRefs="true" 
+                             filesetId="build-dependency-jars"
+                             cacheDependencyRefs="true"
                              dependencyRefsBuildFile="${build.dir}/build-dependencies.xml">
+          <remoteRepository refid="central"/>
+          <remoteRepository refid="apache"/>
+          <remoteRepository refid="java.net2"/>
+      </artifact:dependencies>
+      <!-- retrieve -source.jar artifacts using the reference-pom with the artifacts that have these -->
+      <artifact:dependencies pomRefId="build-deps-pom-sources"
+                             sourcesFilesetId="build-dependency-sources"
+                             cacheDependencyRefs="true"
+                             dependencyRefsBuildFile="${build.dir}/build-dependencies-sources.xml">
           <remoteRepository refid="central"/>
           <remoteRepository refid="apache"/>
           <remoteRepository refid="java.net2"/>
@@ -864,6 +915,7 @@
           <include name="org/apache/cassandra/utils/FBUtilities*.class" />
           <include name="org/apache/cassandra/exceptions/*.class" />
           <include name="org/apache/cassandra/utils/CloseableIterator.class" />
+          <include name="org/apache/cassandra/io/util/*.class" />
         </fileset>
         <manifest>
           <attribute name="Implementation-Title" value="Cassandra"/>
@@ -1165,7 +1217,7 @@
         <jvmarg value="-Xss256k"/>
         <jvmarg value="-Dcassandra.memtable_row_overhead_computation_step=100"/>
         <jvmarg value="-Dcassandra.test.use_prepared=${cassandra.test.use_prepared}"/>
-	    <jvmarg value="-Dcassandra.test.offsetseed=@{poffset}"/>
+        <jvmarg value="-Dcassandra.test.offsetseed=@{poffset}"/>
         <jvmarg value="-Dcassandra.test.sstableformatdevelopment=true"/>
         <jvmarg value="-Dcassandra.testtag=@{testtag}"/> 
         <jvmarg value="-Dcassandra.keepBriefBrief=${cassandra.keepBriefBrief}" />
@@ -1197,7 +1249,7 @@
     classpath which only contains what we expect users to need.
   -->
   <target name="test-clientutil-jar" depends="build-test,jar" description="Test clientutil jar">
-    <junit>
+    <junit fork="on" forkmode="perTest" failureproperty="testfailed" maxmemory="1024m" timeout="${test.timeout}">
       <test name="org.apache.cassandra.serializers.ClientUtilsTest" />
       <formatter type="brief" usefile="false" />
       <classpath>
@@ -1216,6 +1268,16 @@
         </fileset>
       </classpath>
     </junit>
+      <fail message="Clientutil test(s) failed.">
+          <condition>
+              <and>
+                  <isset property="testfailed"/>
+                  <not>
+                      <isset property="ant.test.failure.ignore"/>
+                  </not>
+              </and>
+          </condition>
+      </fail>
   </target>
 
   <target name="testold" depends="build-test" description="Execute unit tests">
@@ -1719,12 +1781,9 @@
   	<path id="idea-project-libs-path">
   	 <fileset dir="lib">
   	    <include name="**/*.jar" />
-     </fileset>
+	 </fileset>
  	 <fileset dir="build/lib/jars">
   	    <include name="**/*.jar" />
-  	 </fileset>
-  	 <fileset dir="tools/lib">
-  	     <include name="**/*.jar" />
   	 </fileset>
   	</path>
     <mkdir dir=".idea"/>
@@ -1832,7 +1891,7 @@
           <option name="MAIN_CLASS_NAME" value="" />
           <option name="METHOD_NAME" value="" />
           <option name="TEST_OBJECT" value="class" />
-          <option name="VM_PARAMETERS" value="-Dcassandra.config=file://$PROJECT_DIR$/test/conf/cassandra.yaml -Dlogback.configurationFile=file://$PROJECT_DIR$/test/conf/logback-test.xml -Dcassandra.logdir=$PROJECT_DIR$/build/test/logs -ea" />
+          <option name="VM_PARAMETERS" value="-Dcassandra.debugrefcount=true -Dcassandra.config=file://$PROJECT_DIR$/test/conf/cassandra.yaml -Dlogback.configurationFile=file://$PROJECT_DIR$/test/conf/logback-test.xml -Dcassandra.logdir=$PROJECT_DIR$/build/test/logs -Dcorrupt-sstable-root=$PROJECT_DIR$/test/data/corrupt-sstables -Dmigration-sstable-root=${test.data}/migration-sstables -ea" />
           <option name="PARAMETERS" value="" />
           <option name="WORKING_DIRECTORY" value="" />
           <option name="ENV_VARIABLES" />
@@ -2003,7 +2062,7 @@
             <arg value="-properties" />
             <arg value="${ecj.properties}" />
             <arg value="-cp" />
-            <arg value="${toString:cassandra.build.classpath}" />
+            <arg value="${toString:cassandra.classpath}" />
             <arg value="${build.src.java}" />
         </java>
   </target>

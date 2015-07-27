@@ -24,6 +24,7 @@ package org.apache.cassandra.db.commitlog;
 import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.Iterator;
 import java.util.Properties;
 import java.util.UUID;
 
@@ -37,9 +38,14 @@ import org.junit.Test;
 import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.Schema;
-import org.apache.cassandra.db.Cell;
-import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.db.Mutation;
+import org.apache.cassandra.db.rows.Cell;
+import org.apache.cassandra.db.rows.Row;
+import org.apache.cassandra.db.marshal.AsciiType;
+import org.apache.cassandra.db.marshal.UTF8Type;
+import org.apache.cassandra.db.marshal.BytesType;
+import org.apache.cassandra.db.partitions.PartitionUpdate;
+import org.apache.cassandra.schema.KeyspaceParams;
 
 public class CommitLogUpgradeTest
 {
@@ -51,7 +57,6 @@ public class CommitLogUpgradeTest
 
     static final String TABLE = "Standard1";
     static final String KEYSPACE = "Keyspace1";
-    static final String CELLNAME = "name";
 
     @Test
     public void test20() throws Exception
@@ -68,8 +73,16 @@ public class CommitLogUpgradeTest
     @BeforeClass
     static public void initialize() throws FileNotFoundException, IOException, InterruptedException
     {
+        CFMetaData metadata = CFMetaData.Builder.createDense(KEYSPACE, TABLE, false, false)
+                                                .addPartitionKey("key", AsciiType.instance)
+                                                .addClusteringColumn("col", BytesType.instance)
+                                                .addRegularColumn("val", BytesType.instance)
+                                                .build()
+                                                .compressionParameters(SchemaLoader.getCompressionParameters());
         SchemaLoader.loadSchema();
-        SchemaLoader.schemaDefinition("");
+        SchemaLoader.createKeyspace(KEYSPACE,
+                                    KeyspaceParams.simple(1),
+                                    metadata);
     }
 
     public void testRestore(String location) throws IOException, InterruptedException
@@ -86,7 +99,7 @@ public class CommitLogUpgradeTest
             if (Schema.instance.getCF(cfid) == null)
             {
                 CFMetaData cfm = Schema.instance.getCFMetaData(KEYSPACE, TABLE);
-                Schema.instance.purge(cfm);
+                Schema.instance.unload(cfm);
                 Schema.instance.load(cfm.copy(cfid));
             }
         }
@@ -126,13 +139,13 @@ public class CommitLogUpgradeTest
         @Override
         public boolean apply(Mutation mutation)
         {
-            for (ColumnFamily cf : mutation.getColumnFamilies())
+            for (PartitionUpdate update : mutation.getPartitionUpdates())
             {
-                for (Cell c : cf.getSortedColumns())
+                for (Row row : update)
                 {
-                    if (new String(c.name().toByteBuffer().array(), StandardCharsets.UTF_8).startsWith(CELLNAME))
+                    for (Cell cell : row.cells())
                     {
-                        hash = hash(hash, c.value());
+                        hash = hash(hash, cell.value());
                         ++cells;
                     }
                 }

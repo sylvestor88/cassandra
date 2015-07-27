@@ -218,7 +218,7 @@ public class StartupChecks
             {
                 public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException
                 {
-                    if (!file.toString().endsWith(".db"))
+                    if (!Descriptor.isValidFile(file.getFileName().toString()))
                         return FileVisitResult.CONTINUE;
 
                     try
@@ -236,7 +236,9 @@ public class StartupChecks
                 public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException
                 {
                     String name = dir.getFileName().toString();
-                    return (name.equals("snapshots") || name.equals("backups"))
+                    return (name.equals(Directories.SNAPSHOT_SUBDIR)
+                            || name.equals(Directories.BACKUPS_SUBDIR)
+                            || name.equals(Directories.TRANSACTIONS_SUBDIR))
                            ? FileVisitResult.SKIP_SUBTREE
                            : FileVisitResult.CONTINUE;
                 }
@@ -272,7 +274,7 @@ public class StartupChecks
             // we do a one-off scrub of the system keyspace first; we can't load the list of the rest of the keyspaces,
             // until system keyspace is opened.
 
-            for (CFMetaData cfm : Schema.instance.getKeyspaceMetaData(SystemKeyspace.NAME).values())
+            for (CFMetaData cfm : Schema.instance.getTables(SystemKeyspace.NAME))
                 ColumnFamilyStore.scrubDataDirectories(cfm);
 
             try

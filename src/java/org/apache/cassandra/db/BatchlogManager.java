@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.db;
 
-import java.io.DataInputStream;
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
 import java.net.InetAddress;
@@ -25,6 +24,7 @@ import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
+
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
 
@@ -34,10 +34,10 @@ import com.google.common.util.concurrent.RateLimiter;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import org.apache.cassandra.concurrent.DebuggableScheduledThreadPoolExecutor;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.cql3.UntypedResultSet;
+import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.db.compaction.CompactionManager;
 import org.apache.cassandra.db.marshal.UUIDType;
 import org.apache.cassandra.dht.Token;
@@ -46,6 +46,8 @@ import org.apache.cassandra.exceptions.WriteTimeoutException;
 import org.apache.cassandra.gms.FailureDetector;
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
+import org.apache.cassandra.io.util.DataInputBuffer;
+import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessageOut;
@@ -53,9 +55,9 @@ import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.service.StorageProxy;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.service.WriteResponseHandler;
-import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.WrappedRunnable;
+
 import static org.apache.cassandra.cql3.QueryProcessor.executeInternal;
 
 public class BatchlogManager implements BatchlogManagerMBean
@@ -138,12 +140,12 @@ public class BatchlogManager implements BatchlogManagerMBean
     @VisibleForTesting
     static Mutation getBatchlogMutationFor(Collection<Mutation> mutations, UUID uuid, int version, long now)
     {
-        ColumnFamily cf = ArrayBackedSortedColumns.factory.create(SystemKeyspace.Batchlog);
-        CFRowAdder adder = new CFRowAdder(cf, SystemKeyspace.Batchlog.comparator.builder().build(), now);
-        adder.add("data", serializeMutations(mutations, version))
-             .add("written_at", new Date(now / 1000))
-             .add("version", version);
-        return new Mutation(SystemKeyspace.NAME, UUIDType.instance.decompose(uuid), cf);
+        return new RowUpdateBuilder(SystemKeyspace.Batchlog, now, uuid)
+               .clustering()
+               .add("data", serializeMutations(mutations, version))
+               .add("written_at", new Date(now / 1000))
+               .add("version", version)
+               .build();
     }
 
     private static ByteBuffer serializeMutations(Collection<Mutation> mutations, int version)
@@ -186,7 +188,7 @@ public class BatchlogManager implements BatchlogManagerMBean
                                                  SystemKeyspace.NAME,
                                                  SystemKeyspace.BATCHLOG,
                                                  PAGE_SIZE),
-                                   id);
+                                                 id);
         }
 
         cleanup();
@@ -196,8 +198,8 @@ public class BatchlogManager implements BatchlogManagerMBean
 
     private void deleteBatch(UUID id)
     {
-        Mutation mutation = new Mutation(SystemKeyspace.NAME, UUIDType.instance.decompose(id));
-        mutation.delete(SystemKeyspace.BATCHLOG, FBUtilities.timestampMicros());
+        Mutation mutation = new Mutation(SystemKeyspace.NAME, StorageService.getPartitioner().decorateKey(UUIDType.instance.decompose(id)));
+        mutation.add(PartitionUpdate.fullPartitionDelete(SystemKeyspace.Batchlog, mutation.key(), FBUtilities.timestampMicros(), FBUtilities.nowInSeconds()));
         mutation.apply();
     }
 
@@ -314,7 +316,7 @@ public class BatchlogManager implements BatchlogManagerMBean
 
         private List<Mutation> replayingMutations() throws IOException
         {
-            DataInputStream in = new DataInputStream(ByteBufferUtil.inputStream(data));
+            DataInputPlus in = new DataInputBuffer(data, true);
             int size = in.readInt();
             List<Mutation> mutations = new ArrayList<>(size);
             for (int i = 0; i < size; i++)
@@ -382,7 +384,7 @@ public class BatchlogManager implements BatchlogManagerMBean
         {
             Set<InetAddress> liveEndpoints = new HashSet<>();
             String ks = mutation.getKeyspaceName();
-            Token tk = StorageService.getPartitioner().getToken(mutation.key());
+            Token tk = mutation.key().getToken();
 
             for (InetAddress endpoint : Iterables.concat(StorageService.instance.getNaturalEndpoints(ks, tk),
                                                          StorageService.instance.getTokenMetadata().pendingEndpointsFor(tk, ks)))
@@ -497,7 +499,9 @@ public class BatchlogManager implements BatchlogManagerMBean
             if (validated.keySet().size() == 1)
             {
                 // we have only 1 `other` rack
-                Collection<InetAddress> otherRack = Iterables.getOnlyElement(validated.asMap().values());
+                // pick up to two random nodes from there
+                List<InetAddress> otherRack = validated.get(validated.keySet().iterator().next());
+                Collections.shuffle(otherRack);
                 return Lists.newArrayList(Iterables.limit(otherRack, 2));
             }
 

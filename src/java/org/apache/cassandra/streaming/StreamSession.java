@@ -24,11 +24,10 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import javax.annotation.Nullable;
-
 import com.google.common.base.Function;
 import com.google.common.collect.*;
 
+import org.apache.cassandra.db.lifecycle.LifecycleTransaction;
 import org.apache.cassandra.db.lifecycle.View;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.slf4j.Logger;
@@ -37,7 +36,7 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.Keyspace;
-import org.apache.cassandra.db.RowPosition;
+import org.apache.cassandra.db.PartitionPosition;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
@@ -210,6 +209,12 @@ public class StreamSession implements IEndpointStateChangeSubscriber
     }
 
 
+    public LifecycleTransaction getTransaction(UUID cfId)
+    {
+        assert receivers.containsKey(cfId);
+        return receivers.get(cfId).txn;
+    }
+
     /**
      * Bind this session to report to specific {@link StreamResultFuture} and
      * perform pre-streaming initialization.
@@ -316,25 +321,28 @@ public class StreamSession implements IEndpointStateChangeSubscriber
         {
             for (ColumnFamilyStore cfStore : stores)
             {
-                final List<AbstractBounds<RowPosition>> rowBoundsList = new ArrayList<>(ranges.size());
+                final List<AbstractBounds<PartitionPosition>> rowBoundsList = new ArrayList<>(ranges.size());
                 for (Range<Token> range : ranges)
                     rowBoundsList.add(Range.makeRowRange(range));
                 refs.addAll(cfStore.selectAndReference(new Function<View, List<SSTableReader>>()
                 {
                     public List<SSTableReader> apply(View view)
                     {
-                        List<SSTableReader> filteredSSTables = ColumnFamilyStore.CANONICAL_SSTABLES.apply(view);
+                        Map<SSTableReader, SSTableReader> permittedInstances = new HashMap<>();
+                        for (SSTableReader reader : ColumnFamilyStore.CANONICAL_SSTABLES.apply(view))
+                            permittedInstances.put(reader, reader);
+
                         Set<SSTableReader> sstables = Sets.newHashSet();
-                        if (filteredSSTables != null)
+                        for (AbstractBounds<PartitionPosition> rowBounds : rowBoundsList)
                         {
-                            for (AbstractBounds<RowPosition> rowBounds : rowBoundsList)
+                            // sstableInBounds may contain early opened sstables
+                            for (SSTableReader sstable : view.sstablesInBounds(rowBounds))
                             {
-                                // sstableInBounds may contain early opened sstables
-                                for (SSTableReader sstable : view.sstablesInBounds(rowBounds))
-                                {
-                                    if (filteredSSTables.contains(sstable) && (!isIncremental || !sstable.isRepaired()))
-                                        sstables.add(sstable);
-                                }
+                                if (isIncremental && sstable.isRepaired())
+                                    continue;
+                                sstable = permittedInstances.get(sstable);
+                                if (sstable != null)
+                                    sstables.add(sstable);
                             }
                         }
 

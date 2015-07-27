@@ -237,7 +237,7 @@ public class CollectionsTest extends CQLTester
         assertInvalidMessage("Attempted to set an element on a list which is null",
                              "UPDATE %s SET l[0] = ? WHERE k=0", list("v10"));
 
-        execute("UPDATE %s SET l = l - ? WHERE k=0 ", list("v11"));
+        execute("UPDATE %s SET l = l - ? WHERE k=0", list("v11"));
 
         assertRows(execute("SELECT l FROM %s WHERE k = 0"), row((Object) null));
     }
@@ -585,4 +585,13 @@ public class CollectionsTest extends CQLTester
         assertInvalid("alter table %s add v set<int>");
     }
 
+    @Test
+    public void testDropAndReaddDroppedCollection() throws Throwable
+    {
+        createTable("create table %s (k int primary key, v frozen<set<text>>, x int)");
+        execute("insert into %s (k, v) VALUES (0, {'fffffffff'})");
+        flush();
+        execute("alter table %s drop v");
+        execute("alter table %s add v set<int>");
+    }
 }

@@ -18,6 +18,15 @@ using the provided 'sstableupgrade' tool.
 
 Upgrading
 ---------
+   - User defined functions are now executed in a sandbox.
+     To use UDFs and UDAs, you have to enable them in cassandra.yaml.
+   - New SSTable version 'la' with improved bloom-filter false-positive handling
+     compared to previous version 'ka' used in 2.2 and 2.1. Running sstableupgrade
+     is not necessary but recommended.
+   - Before upgrading to 3.0, make sure that your cluster is in complete agreement
+     (schema versions outputted by `nodetool describecluster` are all the same).
+   - Schema metadata is now stored in the new `system_schema` keyspace, and
+     legacy `system.schema_*` tables are now gone; see CASSANDRA-6717 for details.
    - Pig's CassandraStorage has been removed. Use CqlNativeStorage instead.
    - Hadoop BulkOutputFormat and BulkRecordWriter have been removed; use
      CqlBulkOutputFormat and CqlBulkRecordWriter instead.
@@ -25,6 +34,12 @@ Upgrading
      use CqlInputFormat and CqlOutputFormat instead.
    - Hadoop ColumnFamilyRecordReader and ColumnFamilyRecordWriter have been removed;
      use CqlRecordReader and CqlRecordWriter instead.
+   - hinted_handoff_enabled in cassandra.yaml no longer supports a list of data centers.
+     To specify a list of excluded data centers when hinted_handoff_enabled is set to true,
+     use hinted_handoff_disabled_datacenters, see CASSANDRA-9035 for details.
+   - The `sstable_compression` and `chunk_length_kb` compression options have been deprecated.
+     The new options are `class` and `chunk_length_in_kb`. Disabling compression should now
+     be done by setting the new option `enabled` to `false`.
 
 
 2.2
@@ -32,6 +47,10 @@ Upgrading
 
 New features
 ------------
+   - Selecting columns,scalar functions, UDT fields, writetime or ttl together
+     with aggregated is now possible. The value returned for the columns,
+     scalar functions, UDT fields, writetime and ttl will be the ones for
+     the first row matching the query.
    - Windows is now a supported platform. Powershell execution for startup scripts
      is highly recommended and can be enabled via an administrator command-prompt
      with: 'powershell set-executionpolicy unrestricted'
@@ -152,6 +171,13 @@ Upgrading
    - The sstable2json and json2sstable tools have been deprecated and will be
      removed in the next major Cassandra release. See CASSANDRA-9618
      (https://issues.apache.org/jira/browse/CASSANDRA-9618) for details.
+   - nodetool enablehandoff will no longer support a list of data centers starting
+     with the next major release. Two new commands will be added, enablehintsfordc and disablehintsfordc,
+     to exclude data centers from using hinted handoff when the global status is enabled.
+     In cassandra.yaml, hinted_handoff_enabled will no longer support a list of data centers starting
+     with the next major release. A new setting will be added, hinted_handoff_disabled_datacenters,
+     to exclude data centers when the global status is enabled, see CASSANDRA-9035 for details.
+
 
 2.1.6
 =====

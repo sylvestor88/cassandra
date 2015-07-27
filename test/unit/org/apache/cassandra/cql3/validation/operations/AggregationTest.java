@@ -24,46 +24,182 @@ import java.util.Date;
 import java.util.TimeZone;
 
 import org.apache.commons.lang3.time.DateUtils;
-import org.junit.Assert;
+
 import org.junit.Test;
 
-import org.apache.cassandra.cql3.QueryProcessor;
-import org.apache.cassandra.cql3.functions.Functions;
-import org.apache.cassandra.cql3.functions.UDAggregate;
+import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.cql3.CQLTester;
+import org.apache.cassandra.cql3.QueryProcessor;
+import org.apache.cassandra.cql3.UntypedResultSet;
+import org.apache.cassandra.cql3.UntypedResultSet.Row;
+import org.apache.cassandra.cql3.functions.UDAggregate;
 import org.apache.cassandra.exceptions.FunctionExecutionException;
 import org.apache.cassandra.exceptions.InvalidRequestException;
-import org.apache.cassandra.serializers.Int32Serializer;
+import org.apache.cassandra.schema.KeyspaceMetadata;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.transport.Event;
 import org.apache.cassandra.transport.messages.ResultMessage;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 
 public class AggregationTest extends CQLTester
 {
     @Test
     public void testFunctions() throws Throwable
     {
-        createTable("CREATE TABLE %s (a int, b int, c double, d decimal, primary key (a, b))");
+        createTable("CREATE TABLE %s (a int, b int, c double, d decimal, e smallint, f tinyint, primary key (a, b))");
 
         // Test with empty table
         assertColumnNames(execute("SELECT COUNT(*) FROM %s"), "count");
         assertRows(execute("SELECT COUNT(*) FROM %s"), row(0L));
-        assertColumnNames(execute("SELECT max(b), min(b), sum(b), avg(b) , max(c), sum(c), avg(c), sum(d), avg(d) FROM %s"),
-                          "system.max(b)", "system.min(b)", "system.sum(b)", "system.avg(b)", "system.max(c)", "system.sum(c)", "system.avg(c)", "system.sum(d)", "system.avg(d)");
-        assertRows(execute("SELECT max(b), min(b), sum(b), avg(b) , max(c), sum(c), avg(c), sum(d), avg(d) FROM %s"),
-                   row(null, null, 0, 0, null, 0.0, 0.0, new BigDecimal("0"), new BigDecimal("0")));
+        assertColumnNames(execute("SELECT max(b), min(b), sum(b), avg(b)," +
+                                  "max(c), sum(c), avg(c)," +
+                                  "sum(d), avg(d)," +
+                                  "max(e), min(e), sum(e), avg(e)," +
+                                  "max(f), min(f), sum(f), avg(f) FROM %s"),
+                          "system.max(b)", "system.min(b)", "system.sum(b)", "system.avg(b)",
+                          "system.max(c)", "system.sum(c)", "system.avg(c)",
+                          "system.sum(d)", "system.avg(d)",
+                          "system.max(e)", "system.min(e)", "system.sum(e)", "system.avg(e)",
+                          "system.max(f)", "system.min(f)", "system.sum(f)", "system.avg(f)");
+        assertRows(execute("SELECT max(b), min(b), sum(b), avg(b)," +
+                           "max(c), sum(c), avg(c)," +
+                           "sum(d), avg(d)," +
+                           "max(e), min(e), sum(e), avg(e)," +
+                           "max(f), min(f), sum(f), avg(f) FROM %s"),
+                   row(null, null, 0, 0, null, 0.0, 0.0, new BigDecimal("0"), new BigDecimal("0"),
+                       null, null, (short)0, (short)0,
+                       null, null, (byte)0, (byte)0));
 
-        execute("INSERT INTO %s (a, b, c, d) VALUES (1, 1, 11.5, 11.5)");
-        execute("INSERT INTO %s (a, b, c, d) VALUES (1, 2, 9.5, 1.5)");
-        execute("INSERT INTO %s (a, b, c, d) VALUES (1, 3, 9.0, 2.0)");
+        execute("INSERT INTO %s (a, b, c, d, e, f) VALUES (1, 1, 11.5, 11.5, 1, 1)");
+        execute("INSERT INTO %s (a, b, c, d, e, f) VALUES (1, 2, 9.5, 1.5, 2, 2)");
+        execute("INSERT INTO %s (a, b, c, d, e, f) VALUES (1, 3, 9.0, 2.0, 3, 3)");
 
-        assertRows(execute("SELECT max(b), min(b), sum(b), avg(b) , max(c), sum(c), avg(c), sum(d), avg(d) FROM %s"),
-                   row(3, 1, 6, 2, 11.5, 30.0, 10.0, new BigDecimal("15.0"), new BigDecimal("5.0")));
+        assertRows(execute("SELECT max(b), min(b), sum(b), avg(b) , max(c), sum(c), avg(c), sum(d), avg(d)," +
+                           "max(e), min(e), sum(e), avg(e)," +
+                           "max(f), min(f), sum(f), avg(f)" +
+                           " FROM %s"),
+                   row(3, 1, 6, 2, 11.5, 30.0, 10.0, new BigDecimal("15.0"), new BigDecimal("5.0"),
+                       (short)3, (short)1, (short)6, (short)2,
+                       (byte)3, (byte)1, (byte)6, (byte)2));
 
         execute("INSERT INTO %s (a, b, d) VALUES (1, 5, 1.0)");
         assertRows(execute("SELECT COUNT(*) FROM %s"), row(4L));
         assertRows(execute("SELECT COUNT(1) FROM %s"), row(4L));
-        assertRows(execute("SELECT COUNT(b), count(c) FROM %s"), row(4L, 3L));
+        assertRows(execute("SELECT COUNT(b), count(c), count(e), count(f) FROM %s"), row(4L, 3L, 3L, 3L));
+    }
+
+    @Test
+    public void testAggregateWithColumns() throws Throwable
+    {
+        createTable("CREATE TABLE %s (a int, b int, c int, primary key (a, b))");
+
+        // Test with empty table
+        assertColumnNames(execute("SELECT count(b), max(b) as max, b, c as first FROM %s"),
+                          "system.count(b)", "max", "b", "first");
+        assertRows(execute("SELECT count(b), max(b) as max, b, c as first FROM %s"),
+                           row(0L, null, null, null));
+
+        execute("INSERT INTO %s (a, b, c) VALUES (1, 2, null)");
+        execute("INSERT INTO %s (a, b, c) VALUES (2, 4, 6)");
+        execute("INSERT INTO %s (a, b, c) VALUES (4, 8, 12)");
+
+        assertRows(execute("SELECT count(b), max(b) as max, b, c as first FROM %s"),
+                   row(3L, 8, 2, null));
+    }
+
+    @Test
+    public void testAggregateWithUdtFields() throws Throwable
+    {
+        String myType = createType("CREATE TYPE %s (x int)");
+        createTable("CREATE TABLE %s (a int primary key, b frozen<" + myType + ">, c frozen<" + myType + ">)");
+
+        // Test with empty table
+        assertColumnNames(execute("SELECT count(b.x), max(b.x) as max, b.x, c.x as first FROM %s"),
+                          "system.count(b.x)", "max", "b.x", "first");
+        assertRows(execute("SELECT count(b.x), max(b.x) as max, b.x, c.x as first FROM %s"),
+                           row(0L, null, null, null));
+
+        execute("INSERT INTO %s (a, b, c) VALUES (1, {x:2}, null)");
+        execute("INSERT INTO %s (a, b, c) VALUES (2, {x:4}, {x:6})");
+        execute("INSERT INTO %s (a, b, c) VALUES (4, {x:8}, {x:12})");
+
+        assertRows(execute("SELECT count(b.x), max(b.x) as max, b.x, c.x as first FROM %s"),
+                   row(3L, 8, 2, null));
+
+        assertInvalidMessage("Invalid field selection: max(b) of type blob is not a user type",
+                             "SELECT max(b).x as max FROM %s");
+    }
+
+    @Test
+    public void testAggregateWithFunctions() throws Throwable
+    {
+        createTable("CREATE TABLE %s (a int, b double, c double, primary key(a, b))");
+
+        String copySign = createFunction(KEYSPACE,
+                                         "double, double",
+                                         "CREATE OR REPLACE FUNCTION %s(magnitude double, sign double) " +
+                                         "RETURNS NULL ON NULL INPUT " +
+                                         "RETURNS double " +
+                                         "LANGUAGE JAVA " +
+                                         "AS 'return Double.valueOf(Math.copySign(magnitude, sign));';");
+
+        // Test with empty table
+        assertColumnNames(execute("SELECT count(b), max(b) as max, " + copySign + "(b, c), " + copySign + "(c, b) as first FROM %s"),
+                          "system.count(b)", "max", copySign + "(b, c)", "first");
+        assertRows(execute("SELECT count(b), max(b) as max, " + copySign + "(b, c), " + copySign + "(c, b) as first FROM %s"),
+                           row(0L, null, null, null));
+
+        execute("INSERT INTO %s (a, b, c) VALUES (0, -1.2, 2.1)");
+        execute("INSERT INTO %s (a, b, c) VALUES (0, 1.3, -3.4)");
+        execute("INSERT INTO %s (a, b, c) VALUES (0, 1.4, 1.2)");
+
+        assertRows(execute("SELECT count(b), max(b) as max, " + copySign + "(b, c), " + copySign + "(c, b) as first FROM %s"),
+                   row(3L, 1.4, 1.2, -2.1));
+
+        execute("INSERT INTO %s (a, b, c) VALUES (1, -1.2, null)");
+        execute("INSERT INTO %s (a, b, c) VALUES (1, 1.3, -3.4)");
+        execute("INSERT INTO %s (a, b, c) VALUES (1, 1.4, 1.2)");
+        assertRows(execute("SELECT count(b), max(b) as max, " + copySign + "(b, c), " + copySign + "(c, b) as first FROM %s WHERE a = 1"),
+                   row(3L, 1.4, null, null));
+    }
+
+    @Test
+    public void testAggregateWithWithWriteTimeOrTTL() throws Throwable
+    {
+        createTable("CREATE TABLE %s (a int primary key, b int, c int)");
+
+        // Test with empty table
+        assertColumnNames(execute("SELECT count(writetime(b)), min(ttl(b)) as min, writetime(b), ttl(c) as first FROM %s"),
+                          "system.count(writetime(b))", "min", "writetime(b)", "first");
+        assertRows(execute("SELECT count(writetime(b)), min(ttl(b)) as min, writetime(b), ttl(c) as first FROM %s"),
+                           row(0L, null, null, null));
+
+        long today = System.currentTimeMillis() * 1000;
+        long yesterday = today - (DateUtils.MILLIS_PER_DAY * 1000);
+
+        execute("INSERT INTO %s (a, b, c) VALUES (1, 2, null) USING TTL 5;");
+        execute("INSERT INTO %s (a, b, c) VALUES (2, 4, 6) USING TTL 2;");
+        execute("INSERT INTO %s (a, b, c) VALUES (4, 8, 12) USING TIMESTAMP " + yesterday );
+
+        assertRows(execute("SELECT count(writetime(b)), count(ttl(b)) FROM %s"),
+                   row(3L, 2L));
+
+        UntypedResultSet resultSet = execute("SELECT min(ttl(b)), ttl(b) FROM %s");
+        assertEquals(1, resultSet.size());
+        Row row = resultSet.one();
+        assertTrue(row.getInt("ttl(b)") > 4);
+        assertTrue(row.getInt("system.min(ttl(b))") <= 2);
+
+        resultSet = execute("SELECT min(writetime(b)), writetime(b) FROM %s");
+        assertEquals(1, resultSet.size());
+        row = resultSet.one();
+
+        assertTrue(row.getLong("writetime(b)") >= today);
+        assertTrue(row.getLong("system.min(writetime(b))") == yesterday);
     }
 
     @Test
@@ -95,8 +231,6 @@ public class AggregationTest extends CQLTester
         execute("INSERT INTO %s (a, b, c) VALUES (1, 3, 8)");
 
         assertInvalidSyntax("SELECT max(b), max(c) FROM %s WHERE max(a) = 1");
-        assertInvalidMessage("only aggregates or no aggregate", "SELECT max(b), c FROM %s");
-        assertInvalidMessage("only aggregates or no aggregate", "SELECT b, max(c) FROM %s");
         assertInvalidMessage("aggregate functions cannot be used as arguments of aggregate functions", "SELECT max(sum(c)) FROM %s");
         assertInvalidSyntax("SELECT COUNT(2) FROM %s");
     }
@@ -137,8 +271,8 @@ public class AggregationTest extends CQLTester
         assertRows(execute("SELECT " + copySign + "(max(c), min(c)) FROM %s"), row(-1.4));
         assertRows(execute("SELECT " + copySign + "(c, d) FROM %s"), row(1.2), row(-1.3), row(1.4));
         assertRows(execute("SELECT max(" + copySign + "(c, d)) FROM %s"), row(1.4));
-        assertInvalidMessage("must be either all aggregates or no aggregates", "SELECT " + copySign + "(c, max(c)) FROM %s");
-        assertInvalidMessage("must be either all aggregates or no aggregates", "SELECT " + copySign + "(max(c), c) FROM %s");
+        assertRows(execute("SELECT " + copySign + "(c, max(c)) FROM %s"), row(1.2));
+        assertRows(execute("SELECT " + copySign + "(max(c), c) FROM %s"), row(-1.4));;
     }
 
     @Test
@@ -806,10 +940,10 @@ public class AggregationTest extends CQLTester
                                        "STYPE int");
 
             ResultMessage.Prepared prepared = QueryProcessor.prepare("SELECT " + a + "(b) FROM " + otherKS + ".jsdp", ClientState.forInternalCalls(), false);
-            Assert.assertNotNull(QueryProcessor.instance.getPrepared(prepared.statementId));
+            assertNotNull(QueryProcessor.instance.getPrepared(prepared.statementId));
 
             execute("DROP AGGREGATE " + a + "(int)");
-            Assert.assertNull(QueryProcessor.instance.getPrepared(prepared.statementId));
+            assertNull(QueryProcessor.instance.getPrepared(prepared.statementId));
 
             //
 
@@ -818,11 +952,11 @@ public class AggregationTest extends CQLTester
                     "STYPE int");
 
             prepared = QueryProcessor.prepare("SELECT " + a + "(b) FROM " + otherKS + ".jsdp", ClientState.forInternalCalls(), false);
-            Assert.assertNotNull(QueryProcessor.instance.getPrepared(prepared.statementId));
+            assertNotNull(QueryProcessor.instance.getPrepared(prepared.statementId));
 
             execute("DROP KEYSPACE " + otherKS + ";");
 
-            Assert.assertNull(QueryProcessor.instance.getPrepared(prepared.statementId));
+            assertNull(QueryProcessor.instance.getPrepared(prepared.statementId));
         }
         finally
         {
@@ -1014,10 +1148,16 @@ public class AggregationTest extends CQLTester
                                    "SFUNC " + shortFunctionName(fState) + " " +
                                    "STYPE int ");
 
-        UDAggregate f = (UDAggregate) Functions.find(parseFunctionName(a)).get(0);
+        KeyspaceMetadata ksm = Schema.instance.getKSMetaData(keyspace());
+        UDAggregate f = (UDAggregate) ksm.functions.get(parseFunctionName(a)).iterator().next();
 
-        Functions.addOrReplaceFunction(UDAggregate.createBroken(f.name(), f.argTypes(), f.returnType(),
-                                                                null, new InvalidRequestException("foo bar is broken")));
+        UDAggregate broken = UDAggregate.createBroken(f.name(),
+                                                      f.argTypes(),
+                                                      f.returnType(),
+                                                      null,
+                                                      new InvalidRequestException("foo bar is broken"));
+
+        Schema.instance.setKeyspaceMetadata(ksm.withSwapped(ksm.functions.without(f.name(), f.argTypes()).with(broken)));
 
         assertInvalidThrowMessage("foo bar is broken", InvalidRequestException.class,
                                   "SELECT " + a + "(val) FROM %s");
@@ -1114,26 +1254,6 @@ public class AggregationTest extends CQLTester
                              "STYPE " + type + " " +
                              "FINALFUNC " + fFinalWrong + ' ' +
                              "INITCOND 1");
-    }
-
-    @Test
-    public void testSystemKeyspace() throws Throwable
-    {
-        String fState = createFunction(KEYSPACE,
-                                       "text, text",
-                                       "CREATE FUNCTION %s(a text, b text) " +
-                                       "CALLED ON NULL INPUT " +
-                                       "RETURNS text " +
-                                       "LANGUAGE java " +
-                                       "AS 'return \"foobar\";'");
-
-        createAggregate(KEYSPACE,
-                        "text",
-                        "CREATE AGGREGATE %s(text) " +
-                        "SFUNC " + shortFunctionName(fState) + ' ' +
-                        "STYPE text " +
-                        "FINALFUNC system.varcharasblob " +
-                        "INITCOND 'foobar'");
     }
 
     @Test
@@ -1448,34 +1568,6 @@ public class AggregationTest extends CQLTester
 
         assertRows(execute("SELECT " + aCON + "(b) FROM %s"), row("finxnullyxnullyxnully"));
         assertRows(execute("SELECT " + aRNON + "(b) FROM %s"), row("fin"));
-
-    }
-
-    @Test
-    public void testSystemKsFuncs() throws Throwable
-    {
-
-        String fAdder = createFunction(KEYSPACE,
-                                      "int, int",
-                                      "CREATE FUNCTION %s(a int, b int) " +
-                                      "CALLED ON NULL INPUT " +
-                                      "RETURNS int " +
-                                      "LANGUAGE java " +
-                                      "AS 'return (a != null ? a : 0) + (b != null ? b : 0);'");
-
-        String aAggr = createAggregate(KEYSPACE,
-                                      "int",
-                                      "CREATE AGGREGATE %s(int) " +
-                                      "SFUNC " + shortFunctionName(fAdder) + ' ' +
-                                      "STYPE int " +
-                                      "FINALFUNC intasblob");
-
-        createTable("CREATE TABLE %s (a int primary key, b int)");
-        execute("INSERT INTO %s (a, b) VALUES (1, 1)");
-        execute("INSERT INTO %s (a, b) VALUES (2, 2)");
-        execute("INSERT INTO %s (a, b) VALUES (3, 3)");
-
-        assertRows(execute("SELECT " + aAggr + "(b) FROM %s"), row(Int32Serializer.instance.serialize(6)));
 
     }
 }

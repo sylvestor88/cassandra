@@ -33,9 +33,7 @@ import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.compaction.OperationType;
 import org.apache.cassandra.db.lifecycle.LifecycleTransaction.ReaderState;
 import org.apache.cassandra.db.lifecycle.LifecycleTransaction.ReaderState.Action;
-import org.apache.cassandra.io.sstable.SSTableDeletingTask;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
-import org.apache.cassandra.metrics.ColumnFamilyMetrics;
 import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.concurrent.AbstractTransactionalTest;
 import org.apache.cassandra.utils.concurrent.Transactional.AbstractTransactional.State;
@@ -250,7 +248,7 @@ public class LifecycleTransactionTest extends AbstractTransactionalTest
 
     protected TestableTransaction newTest()
     {
-        SSTableDeletingTask.waitForDeletions();
+        TransactionLogs.waitForDeletions();
         SSTableReader.resetTidying();
         return new TxnTest();
     }
@@ -399,6 +397,12 @@ public class LifecycleTransactionTest extends AbstractTransactionalTest
             Assert.assertEquals(6, tracker.getView().sstables.size());
             for (SSTableReader reader : concat(loggedObsolete, stagedObsolete))
                 Assert.assertTrue(reader.selfRef().globalCount() == 0);
+        }
+
+        @Override
+        protected boolean commitCanThrow()
+        {
+            return true;
         }
     }
 

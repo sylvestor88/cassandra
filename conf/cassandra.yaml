@@ -42,10 +42,13 @@ num_tokens: 256
 # initial_token:
 
 # See http://wiki.apache.org/cassandra/HintedHandoff
-# May either be "true" or "false" to enable globally, or contain a list
-# of data centers to enable per-datacenter.
-# hinted_handoff_enabled: DC1,DC2
+# May either be "true" or "false" to enable globally
 hinted_handoff_enabled: true
+# When hinted_handoff_enabled is true, a black list of data centers that will not
+# perform hinted handoff
+#hinted_handoff_disabled_datacenters:
+#    - DC1
+#    - DC2
 # this defines the maximum amount of time a dead host will have hints
 # generated.  After it has been dead this long, new hints for it will not be
 # created until it has been seen alive and gone down again.
@@ -151,11 +154,12 @@ partitioner: org.apache.cassandra.dht.Murmur3Partitioner
 # commitlog_directory: /var/lib/cassandra/commitlog
 
 # policy for data disk failures:
-# die: shut down gossip and Thrift and kill the JVM for any fs errors or
+# die: shut down gossip and client transports and kill the JVM for any fs errors or
 #      single-sstable errors, so the node can be replaced.
-# stop_paranoid: shut down gossip and Thrift even for single-sstable errors.
-# stop: shut down gossip and Thrift, leaving the node effectively dead, but
-#       can still be inspected via JMX.
+# stop_paranoid: shut down gossip and client transports even for single-sstable errors,
+#                kill the JVM for errors during startup.
+# stop: shut down gossip and client transports, leaving the node effectively dead, but
+#       can still be inspected via JMX, kill the JVM for errors during startup.
 # best_effort: stop using the failed disk and respond to requests based on
 #              remaining available sstables.  This means you WILL see obsolete
 #              data at CL.ONE!
@@ -640,6 +644,9 @@ batch_size_fail_threshold_in_kb: 50
 # of compaction, including validation compaction.
 compaction_throughput_mb_per_sec: 16
 
+# Log a warning when compacting partitions larger than this value
+compaction_large_partition_warning_threshold_mb: 100
+
 # When compacting, the replacement sstable(s) can be opened before they
 # are completely written, and used in place of the prior sstables for
 # any range that has been written. This helps to smoothly transfer reads 
@@ -866,10 +873,7 @@ tracetype_query_ttl: 86400
 tracetype_repair_ttl: 604800
 
 # UDFs (user defined functions) are disabled by default.
-# As of Cassandra 2.2, there is no security manager or anything else in place that
-# prevents execution of evil code. CASSANDRA-9402 will fix this issue for Cassandra 3.0.
-# This will inherently be backwards-incompatible with any 2.2 UDF that perform insecure
-# operations such as opening a socket or writing to the filesystem.
+# As of Cassandra 3.0 there is a sandbox in place that should prevent execution of evil code.
 enable_user_defined_functions: false
 
 # The default Windows kernel timer and scheduling resolution is 15.6ms for power conservation.
