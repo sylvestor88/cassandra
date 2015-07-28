@@ -249,7 +249,7 @@ public class CCMBridge extends Bridge
         }
     }
 
-    public void nodeTool(int node, String command, String arguments)
+    public void nodeTool(String node, String command, String arguments)
     {
         String fullCommand;
         if(arguments == "")
@@ -323,7 +323,7 @@ public class CCMBridge extends Bridge
         return endpoints;
     }
 
-    public void ssTableSplit(int node, String options, String keyspace)
+    public void ssTableSplit(String node, String options, String keyspace)
     {
         String fullCommand;
         if(options == "")
@@ -337,7 +337,7 @@ public class CCMBridge extends Bridge
         executeAndPrint(fullCommand);
     }
 
-    public void ssTableMetaData(int node, String keyspace)
+    public void ssTableMetaData(String node, String keyspace)
     {
         String fullCommand;
         if(keyspace == "")
