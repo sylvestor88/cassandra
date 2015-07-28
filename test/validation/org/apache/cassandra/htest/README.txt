@@ -10,6 +10,10 @@ cassandrayaml: A map of options to forward directly to the cassandra.yaml of eac
 
 moduleArgs: A map of maps. The keys of the outer map correspond to modules in your test. The inner maps correspond to settings for those modules. Each module will have its own settings to choose from, and not all modules will have settings. Please refer to the documentation or code for each module to find what is supported.
 
+ignoredErrors: A list of errors that we expect to occur during this test, and thus should not trigger failure.
+
+requiredErrors: A list of errors that we expect to occur during this test, and if they do not, we count that as failure.
+
 The yaml syntax for a list is:
 
 key:
