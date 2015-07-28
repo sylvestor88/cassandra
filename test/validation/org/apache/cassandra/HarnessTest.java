@@ -96,6 +96,7 @@ public class HarnessTest
     public void harness()
     {
         config = loadConfig(getConfigURL(yaml));
+        cleanConfig(config);
         cluster = new CCMBridge(config);
         HarnessContext context = new HarnessContext(this, cluster);
         for (String[] moduleGroup : config.modules)
@@ -124,6 +125,14 @@ public class HarnessTest
         cluster.destroy();
         Assert.assertTrue(result, result == "");
         parseFailures(failures);
+    }
+
+    public void cleanConfig(Config config)
+    {
+        if (config.ignoredErrors == null)
+            config.ignoredErrors = new ArrayList<>();
+        if (config.requiredErrors == null)
+            config.requiredErrors = new ArrayList<>();
     }
 
     public void parseFailures(Map<String, List<String>> failures)
