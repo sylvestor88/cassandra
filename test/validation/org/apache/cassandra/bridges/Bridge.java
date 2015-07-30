@@ -20,6 +20,8 @@
  */
 package org.apache.cassandra.bridges;
 
+import org.apache.cassandra.Node;
+
 public abstract class Bridge
 {
     protected static final Runtime runtime = Runtime.getRuntime();
@@ -29,8 +31,8 @@ public abstract class Bridge
     public abstract String readClusterLogs(String testName);
     public abstract void captureLogs(String testName);
     public abstract String[] clusterEndpoints();
-    public abstract void nodeTool(String node, String command, String arguments);
-    public abstract void ssTableSplit(String node, String options, String keyspace);
-    public abstract void ssTableMetaData(String node, String keyspace_path);
+    public abstract void nodeTool(Node node, String command, String arguments);
+    public abstract void ssTableSplit(Node node, String options, String keyspace);
+    public abstract void ssTableMetaData(Node node, String keyspace_path);
     public abstract String stress(String options);
 }
