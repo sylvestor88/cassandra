@@ -28,6 +28,7 @@ import org.apache.commons.io.FileUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.cassandra.Node;
 import org.apache.cassandra.bridges.ArchiveClusterLogs;
 import org.apache.cassandra.bridges.Bridge;
 import org.apache.cassandra.htest.Config;
@@ -249,16 +250,16 @@ public class CCMBridge extends Bridge
         }
     }
 
-    public void nodeTool(String node, String command, String arguments)
+    public void nodeTool(Node node, String command, String arguments)
     {
         String fullCommand;
         if(arguments == "")
         {
-            fullCommand = "ccm node" + node + " nodetool " + command;
+            fullCommand = "ccm node" + node.getName() + " nodetool " + command;
         }
         else
         {
-            fullCommand = "ccm node" + node + " nodetool " + command + " " + arguments;
+            fullCommand = "ccm node" + node.getName() + " nodetool " + command + " " + arguments;
         }
         executeAndPrint(fullCommand);
     }
@@ -323,30 +324,30 @@ public class CCMBridge extends Bridge
         return endpoints;
     }
 
-    public void ssTableSplit(String node, String options, String keyspace)
+    public void ssTableSplit(Node node, String options, String keyspace)
     {
         String fullCommand;
         if(options == "")
         {
-            fullCommand = "ccm node" + node + " sstablesplit";
+            fullCommand = "ccm node" + node.getName() + " sstablesplit";
         }
         else
         {
-            fullCommand = "ccm node" + node + " sstablesplit " + options;
+            fullCommand = "ccm node" + node.getName() + " sstablesplit " + options;
         }
         executeAndPrint(fullCommand);
     }
 
-    public void ssTableMetaData(String node, String keyspace)
+    public void ssTableMetaData(Node node, String keyspace)
     {
         String fullCommand;
         if(keyspace == "")
         {
-            fullCommand = "ccm node" + node + " getsstables";
+            fullCommand = "ccm node" + node.getName() + " getsstables";
         }
         else
         {
-            fullCommand = "ccm node" + node + " getsstables " + keyspace;
+            fullCommand = "ccm node" + node.getName() + " getsstables " + keyspace;
         }
 
         String sstableFiles = executeAndReturn(fullCommand);

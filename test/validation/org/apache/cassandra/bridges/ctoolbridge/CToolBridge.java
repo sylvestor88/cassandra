@@ -27,6 +27,7 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.cassandra.Node;
 import org.apache.cassandra.bridges.ArchiveClusterLogs;
 import org.apache.cassandra.bridges.Bridge;
 import org.apache.cassandra.htest.Config;
@@ -285,17 +286,17 @@ public class CToolBridge extends Bridge
         }
     }
 
-    public void nodeTool(String node, String command, String arguments)
+    public void nodeTool(Node node, String command, String arguments)
     {
         String fullCommand;
         if (arguments == "")
         {
             fullCommand = "/home/automaton/cassandra/bin/nodetool " + command;
-            executeRun(fullCommand, node);
+            executeRun(fullCommand, node.getName());
         }
         else{
             fullCommand = "/home/automaton/cassandra/bin/nodetool " + command + " " + arguments;
-            executeRun(fullCommand, node);
+            executeRun(fullCommand, node.getName());
         }
     }
 
@@ -307,26 +308,26 @@ public class CToolBridge extends Bridge
         return endpoints;
     }
 
-    public void ssTableSplit(String node, String options, String keyspace_path)
+    public void ssTableSplit(Node node, String options, String keyspace_path)
     {
         String fullCommand;
         if (options == "")
         {
             fullCommand = "/home/automaton/cassandra/tools/bin/sstablesplit /home/automaton/cassandra/data/data/" + keyspace_path;
-            executeRun(fullCommand, node);
+            executeRun(fullCommand, node.getName());
         }
         else
         {
             fullCommand = "/home/automaton/cassandra/tools/bin/sstablesplit " + options + " /home/automaton/cassandra/data/data/" + keyspace_path;
-            executeRun(fullCommand, node);
+            executeRun(fullCommand, node.getName());
         }
         executeAndPrint(fullCommand);
     }
 
-    public void ssTableMetaData(String node, String keyspace_path)
+    public void ssTableMetaData(Node node, String keyspace_path)
     {
         String fullCommand = "/home/automaton/cassandra/tools/bin/sstablemetadata /home/automaton/cassandra/data/data/" + keyspace_path;
-        executeRun(fullCommand, node);
+        executeRun(fullCommand, node.getName());
     }
 
     public String stress(String options)
