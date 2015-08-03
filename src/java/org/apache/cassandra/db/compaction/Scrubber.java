@@ -51,7 +51,7 @@ public class Scrubber implements Closeable
     private final boolean isCommutative;
     private final boolean isIndex;
     private final boolean checkData;
-    private final int expectedBloomFilterSize;
+    private final long expectedBloomFilterSize;
 
     private final RandomAccessReader dataFile;
     private final RandomAccessReader indexFile;
@@ -59,7 +59,6 @@ public class Scrubber implements Closeable
     private final RowIndexEntry.IndexSerializer rowIndexEntrySerializer;
 
     private final boolean isOffline;
-    private final boolean keepOriginals;
 
     private SSTableReader newSstable;
     private SSTableReader newInOrderSstable;
@@ -86,7 +85,7 @@ public class Scrubber implements Closeable
 
     public Scrubber(ColumnFamilyStore cfs, LifecycleTransaction transaction, boolean skipCorrupted, boolean isOffline, boolean checkData) throws IOException
     {
-        this(cfs, transaction, skipCorrupted, new OutputHandler.LogOutput(), isOffline, checkData, false);
+        this(cfs, transaction, skipCorrupted, new OutputHandler.LogOutput(), isOffline, checkData);
     }
 
     @SuppressWarnings("resource")
@@ -95,8 +94,7 @@ public class Scrubber implements Closeable
                     boolean skipCorrupted,
                     OutputHandler outputHandler,
                     boolean isOffline,
-                    boolean checkData,
-                    boolean keepOriginals) throws IOException
+                    boolean checkData) throws IOException
     {
         this.cfs = cfs;
         this.transaction = transaction;
@@ -104,7 +102,6 @@ public class Scrubber implements Closeable
         this.outputHandler = outputHandler;
         this.skipCorrupted = skipCorrupted;
         this.isOffline = isOffline;
-        this.keepOriginals = keepOriginals;
         this.rowIndexEntrySerializer = sstable.descriptor.version.getSSTableFormat().getIndexSerializer(sstable.metadata,
                                                                                                         sstable.descriptor.version,
                                                                                                         sstable.header);
@@ -128,7 +125,7 @@ public class Scrubber implements Closeable
         this.checkData = checkData && !this.isIndex; //LocalByPartitionerType does not support validation
         this.expectedBloomFilterSize = Math.max(
             cfs.metadata.getMinIndexInterval(),
-            hasIndexFile ? (int)(SSTableReader.getApproximateKeyCount(toScrub)) : 0);
+            hasIndexFile ? SSTableReader.getApproximateKeyCount(toScrub) : 0);
 
         // loop through each row, deserializing to check for damage.
         // we'll also loop through the index at the same time, using the position from the index to recover if the
@@ -182,7 +179,7 @@ public class Scrubber implements Closeable
                 DecoratedKey key = null;
                 try
                 {
-                    key = sstable.partitioner.decorateKey(ByteBufferUtil.readWithShortLength(dataFile));
+                    key = sstable.decorateKey(ByteBufferUtil.readWithShortLength(dataFile));
                 }
                 catch (Throwable th)
                 {
@@ -252,7 +249,7 @@ public class Scrubber implements Closeable
                     {
                         outputHandler.output(String.format("Retrying from row index; data is %s bytes starting at %s",
                                                   dataSizeFromIndex, dataStartFromIndex));
-                        key = sstable.partitioner.decorateKey(currentIndexKey);
+                        key = sstable.decorateKey(currentIndexKey);
                         try
                         {
                             dataFile.seek(dataStartFromIndex);

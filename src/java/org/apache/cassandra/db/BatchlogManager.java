@@ -39,6 +39,7 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.cql3.UntypedResultSet;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.db.compaction.CompactionManager;
+import org.apache.cassandra.db.lifecycle.SSTableSet;
 import org.apache.cassandra.db.marshal.UUIDType;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.exceptions.WriteFailureException;
@@ -198,8 +199,11 @@ public class BatchlogManager implements BatchlogManagerMBean
 
     private void deleteBatch(UUID id)
     {
-        Mutation mutation = new Mutation(SystemKeyspace.NAME, StorageService.getPartitioner().decorateKey(UUIDType.instance.decompose(id)));
-        mutation.add(PartitionUpdate.fullPartitionDelete(SystemKeyspace.Batchlog, mutation.key(), FBUtilities.timestampMicros(), FBUtilities.nowInSeconds()));
+        Mutation mutation = new Mutation(
+                PartitionUpdate.fullPartitionDelete(SystemKeyspace.Batchlog,
+                                                    UUIDType.instance.decompose(id),
+                                                    FBUtilities.timestampMicros(),
+                                                    FBUtilities.nowInSeconds()));
         mutation.apply();
     }
 
@@ -455,7 +459,8 @@ public class BatchlogManager implements BatchlogManagerMBean
         ColumnFamilyStore cfs = Keyspace.open(SystemKeyspace.NAME).getColumnFamilyStore(SystemKeyspace.BATCHLOG);
         cfs.forceBlockingFlush();
         Collection<Descriptor> descriptors = new ArrayList<>();
-        for (SSTableReader sstr : cfs.getSSTables())
+        // expects ALL sstables to be available for compaction, so just use live set...
+        for (SSTableReader sstr : cfs.getSSTables(SSTableSet.LIVE))
             descriptors.add(sstr.descriptor);
         if (!descriptors.isEmpty()) // don't pollute the logs if there is nothing to compact.
             CompactionManager.instance.submitUserDefined(cfs, descriptors, Integer.MAX_VALUE).get();

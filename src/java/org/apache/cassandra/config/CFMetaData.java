@@ -24,6 +24,7 @@ import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.stream.Collectors;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.MoreObjects;
@@ -45,11 +46,13 @@ import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.compaction.*;
 import org.apache.cassandra.db.index.SecondaryIndex;
 import org.apache.cassandra.db.marshal.*;
+import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.exceptions.*;
 import org.apache.cassandra.io.compress.CompressionParameters;
 import org.apache.cassandra.io.compress.LZ4Compressor;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
+import org.apache.cassandra.schema.MaterializedViews;
 import org.apache.cassandra.schema.SchemaKeyspace;
 import org.apache.cassandra.schema.Triggers;
 import org.apache.cassandra.utils.*;
@@ -63,7 +66,7 @@ public final class CFMetaData
 {
     public enum Flag
     {
-        SUPER, COUNTER, DENSE, COMPOUND
+        SUPER, COUNTER, DENSE, COMPOUND, MATERIALIZEDVIEW
     }
 
     private static final Logger logger = LoggerFactory.getLogger(CFMetaData.class);
@@ -84,6 +87,15 @@ public final class CFMetaData
 
     // Note that this is the default only for user created tables
     public final static String DEFAULT_COMPRESSOR = LZ4Compressor.class.getCanonicalName();
+
+    // Note that this need to come *before* any CFMetaData is defined so before the compile below.
+    private static final Comparator<ColumnDefinition> regularColumnComparator = new Comparator<ColumnDefinition>()
+    {
+        public int compare(ColumnDefinition def1, ColumnDefinition def2)
+        {
+            return ByteBufferUtil.compareUnsigned(def1.name.bytes, def2.name.bytes);
+        }
+    };
 
     public static class SpeculativeRetry
     {
@@ -171,8 +183,12 @@ public final class CFMetaData
     private final boolean isCompound;
     private final boolean isSuper;
     private final boolean isCounter;
+    private final boolean isMaterializedView;
+
+    private final boolean isIndex;
 
     public volatile ClusteringComparator comparator;  // bytes, long, timeuuid, utf8, etc. This is built directly from clusteringColumns
+    public final IPartitioner partitioner;            // partitioner the table uses
 
     private final Serializers serializers;
 
@@ -193,6 +209,7 @@ public final class CFMetaData
     private volatile SpeculativeRetry speculativeRetry = DEFAULT_SPECULATIVE_RETRY;
     private volatile Map<ByteBuffer, DroppedColumn> droppedColumns = new HashMap<>();
     private volatile Triggers triggers = Triggers.none();
+    private volatile MaterializedViews materializedViews = MaterializedViews.none();
 
     /*
      * All CQL3 columns definition are stored in the columnMetadata map.
@@ -235,6 +252,7 @@ public final class CFMetaData
     public CFMetaData speculativeRetry(SpeculativeRetry prop) {speculativeRetry = prop; return this;}
     public CFMetaData droppedColumns(Map<ByteBuffer, DroppedColumn> cols) {droppedColumns = cols; return this;}
     public CFMetaData triggers(Triggers prop) {triggers = prop; return this;}
+    public CFMetaData materializedViews(MaterializedViews prop) {materializedViews = prop; return this;}
 
     private CFMetaData(String keyspace,
                        String name,
@@ -243,9 +261,11 @@ public final class CFMetaData
                        boolean isCounter,
                        boolean isDense,
                        boolean isCompound,
+                       boolean isMaterializedView,
                        List<ColumnDefinition> partitionKeyColumns,
                        List<ColumnDefinition> clusteringColumns,
-                       PartitionColumns partitionColumns)
+                       PartitionColumns partitionColumns,
+                       IPartitioner partitioner)
     {
         this.cfId = cfId;
         this.ksName = keyspace;
@@ -255,6 +275,7 @@ public final class CFMetaData
         this.isCompound = isCompound;
         this.isSuper = isSuper;
         this.isCounter = isCounter;
+        this.isMaterializedView = isMaterializedView;
 
         EnumSet<Flag> flags = EnumSet.noneOf(Flag.class);
         if (isSuper)
@@ -265,7 +286,14 @@ public final class CFMetaData
             flags.add(Flag.DENSE);
         if (isCompound)
             flags.add(Flag.COMPOUND);
+        if (isMaterializedView)
+            flags.add(Flag.MATERIALIZEDVIEW);
         this.flags = Sets.immutableEnumSet(flags);
+
+        isIndex = cfName.contains(".");
+
+        assert partitioner != null;
+        this.partitioner = partitioner;
 
         // A compact table should always have a clustering
         assert isCQLTable() || !clusteringColumns.isEmpty() : String.format("For table %s.%s, isDense=%b, isCompound=%b, clustering=%s", ksName, cfName, isDense, isCompound, clusteringColumns);
@@ -299,6 +327,11 @@ public final class CFMetaData
             this.compactValueColumn = CompactTables.getCompactValueColumn(partitionColumns, isSuper());
     }
 
+    public MaterializedViews getMaterializedViews()
+    {
+        return materializedViews;
+    }
+
     public static CFMetaData create(String ksName,
                                     String name,
                                     UUID cfId,
@@ -306,7 +339,9 @@ public final class CFMetaData
                                     boolean isCompound,
                                     boolean isSuper,
                                     boolean isCounter,
-                                    List<ColumnDefinition> columns)
+                                    boolean isMaterializedView,
+                                    List<ColumnDefinition> columns,
+                                    IPartitioner partitioner)
     {
         List<ColumnDefinition> partitions = new ArrayList<>();
         List<ColumnDefinition> clusterings = new ArrayList<>();
@@ -338,9 +373,11 @@ public final class CFMetaData
                               isCounter,
                               isDense,
                               isCompound,
+                              isMaterializedView,
                               partitions,
                               clusterings,
-                              builder.build());
+                              builder.build(),
+                              partitioner);
     }
 
     private static List<AbstractType<?>> extractTypes(List<ColumnDefinition> clusteringColumns)
@@ -439,9 +476,28 @@ public final class CFMetaData
                                        isCounter(),
                                        isDense(),
                                        isCompound(),
+                                       isMaterializedView(),
                                        copy(partitionKeyColumns),
                                        copy(clusteringColumns),
-                                       copy(partitionColumns)),
+                                       copy(partitionColumns),
+                                       partitioner),
+                        this);
+    }
+
+    public CFMetaData copy(IPartitioner partitioner)
+    {
+        return copyOpts(new CFMetaData(ksName,
+                                       cfName,
+                                       cfId,
+                                       isSuper,
+                                       isCounter,
+                                       isDense,
+                                       isCompound,
+                                       isMaterializedView,
+                                       copy(partitionKeyColumns),
+                                       copy(clusteringColumns),
+                                       copy(partitionColumns),
+                                       partitioner),
                         this);
     }
 
@@ -481,7 +537,8 @@ public final class CFMetaData
                       .speculativeRetry(oldCFMD.speculativeRetry)
                       .memtableFlushPeriod(oldCFMD.memtableFlushPeriod)
                       .droppedColumns(new HashMap<>(oldCFMD.droppedColumns))
-                      .triggers(oldCFMD.triggers);
+                      .triggers(oldCFMD.triggers)
+                      .materializedViews(oldCFMD.materializedViews);
     }
 
     /**
@@ -511,6 +568,19 @@ public final class CFMetaData
         return cfName.contains(".");
     }
 
+    /**
+     * true if this CFS contains secondary index data.
+     */
+    public boolean isIndex()
+    {
+        return isIndex;
+    }
+
+    public DecoratedKey decorateKey(ByteBuffer key)
+    {
+        return partitioner.decorateKey(key);
+    }
+
     public Map<ByteBuffer, ColumnDefinition> getColumnMetadata()
     {
         return columnMetadata;
@@ -522,7 +592,7 @@ public final class CFMetaData
      */
     public String getParentColumnFamilyName()
     {
-        return isSecondaryIndex() ? cfName.substring(0, cfName.indexOf('.')) : null;
+        return isIndex ? cfName.substring(0, cfName.indexOf('.')) : null;
     }
 
     public double getReadRepairChance()
@@ -753,7 +823,8 @@ public final class CFMetaData
             && Objects.equal(maxIndexInterval, other.maxIndexInterval)
             && Objects.equal(speculativeRetry, other.speculativeRetry)
             && Objects.equal(droppedColumns, other.droppedColumns)
-            && Objects.equal(triggers, other.triggers);
+            && Objects.equal(triggers, other.triggers)
+            && Objects.equal(materializedViews, other.materializedViews);
     }
 
     @Override
@@ -785,6 +856,7 @@ public final class CFMetaData
             .append(speculativeRetry)
             .append(droppedColumns)
             .append(triggers)
+            .append(materializedViews)
             .toHashCode();
     }
 
@@ -846,6 +918,7 @@ public final class CFMetaData
         compressionParameters = cfm.compressionParameters;
 
         triggers = cfm.triggers;
+        materializedViews = cfm.materializedViews;
 
         logger.debug("application result is {}", this);
 
@@ -1262,6 +1335,14 @@ public final class CFMetaData
         return false;
     }
 
+    public boolean hasComplexColumns()
+    {
+        for (ColumnDefinition def : partitionColumns())
+            if (def.isComplex())
+                return true;
+        return false;
+    }
+
     public boolean hasDroppedCollectionColumns()
     {
         for (DroppedColumn def : getDroppedColumns().values())
@@ -1293,6 +1374,11 @@ public final class CFMetaData
         return isCompound;
     }
 
+    public boolean isMaterializedView()
+    {
+        return isMaterializedView;
+    }
+
     public Serializers serializers()
     {
         return serializers;
@@ -1303,6 +1389,22 @@ public final class CFMetaData
         return isCounter()
              ? CounterColumnType.instance
              : (isCompactTable() ? compactValueColumn().type : BytesType.instance);
+    }
+
+    public static Set<Flag> flagsFromStrings(Set<String> strings)
+    {
+        return strings.stream()
+                      .map(String::toUpperCase)
+                      .map(Flag::valueOf)
+                      .collect(Collectors.toSet());
+    }
+
+    public static Set<String> flagsToStrings(Set<Flag> flags)
+    {
+        return flags.stream()
+                    .map(Flag::toString)
+                    .map(String::toLowerCase)
+                    .collect(Collectors.toSet());
     }
 
     @Override
@@ -1337,6 +1439,7 @@ public final class CFMetaData
             .append("speculativeRetry", speculativeRetry)
             .append("droppedColumns", droppedColumns)
             .append("triggers", triggers)
+            .append("materializedViews", materializedViews)
             .toString();
     }
 
@@ -1348,6 +1451,8 @@ public final class CFMetaData
         private final boolean isCompound;
         private final boolean isSuper;
         private final boolean isCounter;
+        private final boolean isMaterializedView;
+        private IPartitioner partitioner;
 
         private UUID tableId;
 
@@ -1356,7 +1461,7 @@ public final class CFMetaData
         private final List<Pair<ColumnIdentifier, AbstractType>> staticColumns = new ArrayList<>();
         private final List<Pair<ColumnIdentifier, AbstractType>> regularColumns = new ArrayList<>();
 
-        private Builder(String keyspace, String table, boolean isDense, boolean isCompound, boolean isSuper, boolean isCounter)
+        private Builder(String keyspace, String table, boolean isDense, boolean isCompound, boolean isSuper, boolean isCounter, boolean isMaterializedView)
         {
             this.keyspace = keyspace;
             this.table = table;
@@ -1364,6 +1469,8 @@ public final class CFMetaData
             this.isCompound = isCompound;
             this.isSuper = isSuper;
             this.isCounter = isCounter;
+            this.isMaterializedView = isMaterializedView;
+            this.partitioner = DatabaseDescriptor.getPartitioner();
         }
 
         public static Builder create(String keyspace, String table)
@@ -1378,7 +1485,12 @@ public final class CFMetaData
 
         public static Builder create(String keyspace, String table, boolean isDense, boolean isCompound, boolean isSuper, boolean isCounter)
         {
-            return new Builder(keyspace, table, isDense, isCompound, isSuper, isCounter);
+            return new Builder(keyspace, table, isDense, isCompound, isSuper, isCounter, false);
+        }
+
+        public static Builder createView(String keyspace, String table)
+        {
+            return new Builder(keyspace, table, false, true, false, false, true);
         }
 
         public static Builder createDense(String keyspace, String table, boolean isCompound, boolean isCounter)
@@ -1389,6 +1501,12 @@ public final class CFMetaData
         public static Builder createSuper(String keyspace, String table, boolean isCounter)
         {
             return create(keyspace, table, false, false, true, isCounter);
+        }
+
+        public Builder withPartitioner(IPartitioner partitioner)
+        {
+            this.partitioner = partitioner;
+            return this;
         }
 
         public Builder withId(UUID tableId)
@@ -1501,9 +1619,11 @@ public final class CFMetaData
                                   isCounter,
                                   isDense,
                                   isCompound,
+                                  isMaterializedView,
                                   partitions,
                                   clusterings,
-                                  builder.build());
+                                  builder.build(),
+                                  partitioner);
         }
     }
 

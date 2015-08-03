@@ -39,16 +39,15 @@ import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.db.compaction.CompactionManager;
 import org.apache.cassandra.db.index.composites.CompositesIndex;
 import org.apache.cassandra.db.index.keys.KeysIndex;
+import org.apache.cassandra.db.lifecycle.SSTableSet;
+import org.apache.cassandra.db.lifecycle.View;
 import org.apache.cassandra.db.marshal.AbstractType;
-import org.apache.cassandra.db.marshal.BytesType;
-import org.apache.cassandra.db.marshal.LocalByPartionerType;
+import org.apache.cassandra.dht.LocalPartitioner;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.io.sstable.ReducingKeyIterator;
-import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.FBUtilities;
-
 import org.apache.cassandra.utils.concurrent.Refs;
 
 /**
@@ -76,10 +75,6 @@ public abstract class SecondaryIndex
      * The name of the option used to specify that the index is on the collection (map) entries.
      */
     public static final String INDEX_ENTRIES_OPTION_NAME = "index_keys_and_values";
-
-    public static final AbstractType<?> keyComparator = StorageService.getPartitioner().preservesOrder()
-                                                      ? BytesType.instance
-                                                      : new LocalByPartionerType(StorageService.getPartitioner());
 
     /**
      * Base CF that has many indexes
@@ -204,9 +199,9 @@ public abstract class SecondaryIndex
     protected void buildIndexBlocking()
     {
         logger.info(String.format("Submitting index build of %s for data in %s",
-                getIndexName(), StringUtils.join(baseCfs.getSSTables(), ", ")));
+                getIndexName(), StringUtils.join(baseCfs.getSSTables(SSTableSet.CANONICAL), ", ")));
 
-        try (Refs<SSTableReader> sstables = baseCfs.selectAndReference(ColumnFamilyStore.CANONICAL_SSTABLES).refs)
+        try (Refs<SSTableReader> sstables = baseCfs.selectAndReference(View.select(SSTableSet.CANONICAL)).refs)
         {
             SecondaryIndexBuilder builder = new SecondaryIndexBuilder(baseCfs,
                                                                       Collections.singleton(getIndexName()),
@@ -301,7 +296,7 @@ public abstract class SecondaryIndex
      */
     public DecoratedKey getIndexKeyFor(ByteBuffer value)
     {
-        return getIndexCfs().partitioner.decorateKey(value);
+        return getIndexCfs().decorateKey(value);
     }
 
     /**
@@ -379,11 +374,20 @@ public abstract class SecondaryIndex
      */
     public static CFMetaData newIndexMetadata(CFMetaData baseMetadata, ColumnDefinition def)
     {
+        return newIndexMetadata(baseMetadata, def, def.type);
+    }
+
+    /**
+     * Create the index metadata for the index on a given column of a given table.
+     */
+    static CFMetaData newIndexMetadata(CFMetaData baseMetadata, ColumnDefinition def, AbstractType<?> comparator)
+    {
         if (def.getIndexType() == IndexType.CUSTOM)
             return null;
 
         CFMetaData.Builder builder = CFMetaData.Builder.create(baseMetadata.ksName, baseMetadata.indexColumnFamilyName(def))
                                                        .withId(baseMetadata.cfId)
+                                                       .withPartitioner(new LocalPartitioner(comparator))
                                                        .addPartitionKey(def.name, def.type);
 
         if (def.getIndexType() == IndexType.COMPOSITES)

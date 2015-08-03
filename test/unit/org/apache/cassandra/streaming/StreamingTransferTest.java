@@ -128,7 +128,7 @@ public class StreamingTransferTest
     public void testRequestEmpty() throws Exception
     {
         // requesting empty data should succeed
-        IPartitioner p = StorageService.getPartitioner();
+        IPartitioner p = Util.testPartitioner();
         List<Range<Token>> ranges = new ArrayList<>();
         ranges.add(new Range<>(p.getMinimumToken(), p.getToken(ByteBufferUtil.bytes("key1"))));
         ranges.add(new Range<>(p.getToken(ByteBufferUtil.bytes("key2")), p.getMinimumToken()));
@@ -165,14 +165,14 @@ public class StreamingTransferTest
             mutator.mutate("key" + i, "col" + i, timestamp);
         cfs.forceBlockingFlush();
         Util.compactAll(cfs, Integer.MAX_VALUE).get();
-        assertEquals(1, cfs.getSSTables().size());
+        assertEquals(1, cfs.getLiveSSTables().size());
 
         // transfer the first and last key
         logger.debug("Transferring {}", cfs.name);
         int[] offs;
         if (transferSSTables)
         {
-            SSTableReader sstable = cfs.getSSTables().iterator().next();
+            SSTableReader sstable = cfs.getLiveSSTables().iterator().next();
             cfs.clearUnsafe();
             transferSSTables(sstable);
             offs = new int[]{1, 3};
@@ -186,7 +186,7 @@ public class StreamingTransferTest
         }
 
         // confirm that a single SSTable was transferred and registered
-        assertEquals(1, cfs.getSSTables().size());
+        assertEquals(1, cfs.getLiveSSTables().size());
 
         // and that the index and filter were properly recovered
         List<ArrayBackedPartition> partitions = Util.getAllUnfiltered(Util.cmd(cfs).build());
@@ -203,7 +203,7 @@ public class StreamingTransferTest
         }
 
         // and that the max timestamp for the file was rediscovered
-        assertEquals(timestamp, cfs.getSSTables().iterator().next().getMaxTimestamp());
+        assertEquals(timestamp, cfs.getLiveSSTables().iterator().next().getMaxTimestamp());
 
         List<String> keys = new ArrayList<>();
         for (int off : offs)
@@ -215,7 +215,7 @@ public class StreamingTransferTest
 
     private void transferSSTables(SSTableReader sstable) throws Exception
     {
-        IPartitioner p = StorageService.getPartitioner();
+        IPartitioner p = sstable.getPartitioner();
         List<Range<Token>> ranges = new ArrayList<>();
         ranges.add(new Range<>(p.getMinimumToken(), p.getToken(ByteBufferUtil.bytes("key1"))));
         ranges.add(new Range<>(p.getToken(ByteBufferUtil.bytes("key2")), p.getMinimumToken()));
@@ -224,7 +224,7 @@ public class StreamingTransferTest
 
     private void transferRanges(ColumnFamilyStore cfs) throws Exception
     {
-        IPartitioner p = StorageService.getPartitioner();
+        IPartitioner p = cfs.getPartitioner();
         List<Range<Token>> ranges = new ArrayList<>();
         // wrapped range
         ranges.add(new Range<Token>(p.getToken(ByteBufferUtil.bytes("key1")), p.getToken(ByteBufferUtil.bytes("key0"))));
@@ -322,12 +322,12 @@ public class StreamingTransferTest
 
         cfs.forceBlockingFlush();
 
-        SSTableReader sstable = cfs.getSSTables().iterator().next();
+        SSTableReader sstable = cfs.getLiveSSTables().iterator().next();
         cfs.clearUnsafe();
         transferSSTables(sstable);
 
         // confirm that a single SSTable was transferred and registered
-        assertEquals(1, cfs.getSSTables().size());
+        assertEquals(1, cfs.getLiveSSTables().size());
 
         Row r = Util.getOnlyRow(Util.cmd(cfs).build());
         Assert.assertFalse(r.isEmpty());
@@ -389,13 +389,13 @@ public class StreamingTransferTest
             .cf(cfs.name)
             .generation(0)
             .write(cleanedEntries);
-        SSTableReader streamed = cfs.getSSTables().iterator().next();
+        SSTableReader streamed = cfs.getLiveSSTables().iterator().next();
         SSTableUtils.assertContentEquals(cleaned, streamed);
 
         // Retransfer the file, making sure it is now idempotent (see CASSANDRA-3481)
         cfs.clearUnsafe();
         transferSSTables(streamed);
-        SSTableReader restreamed = cfs.getSSTables().iterator().next();
+        SSTableReader restreamed = cfs.getLiveSSTables().iterator().next();
         SSTableUtils.assertContentEquals(streamed, restreamed);
     }
 
@@ -418,7 +418,7 @@ public class StreamingTransferTest
         SSTableReader sstable2 = SSTableUtils.prepare().write(content);
 
         // transfer the first and last key
-        IPartitioner p = StorageService.getPartitioner();
+        IPartitioner p = Util.testPartitioner();
         List<Range<Token>> ranges = new ArrayList<>();
         ranges.add(new Range<>(p.getMinimumToken(), p.getToken(ByteBufferUtil.bytes("test"))));
         ranges.add(new Range<>(p.getToken(ByteBufferUtil.bytes("transfer2")), p.getMinimumToken()));
@@ -447,7 +447,7 @@ public class StreamingTransferTest
     public void testTransferOfMultipleColumnFamilies() throws Exception
     {
         String keyspace = KEYSPACE_CACHEKEY;
-        IPartitioner p = StorageService.getPartitioner();
+        IPartitioner p = Util.testPartitioner();
         String[] columnFamilies = new String[] { "Standard1", "Standard2", "Standard3" };
         List<SSTableReader> ssTableReaders = new ArrayList<>();
 
@@ -514,16 +514,16 @@ public class StreamingTransferTest
             mutator.mutate("key" + i, "col" + i, System.currentTimeMillis());
         cfs.forceBlockingFlush();
         Util.compactAll(cfs, Integer.MAX_VALUE).get();
-        SSTableReader sstable = cfs.getSSTables().iterator().next();
+        SSTableReader sstable = cfs.getLiveSSTables().iterator().next();
         cfs.clearUnsafe();
 
-        IPartitioner p = StorageService.getPartitioner();
+        IPartitioner p = Util.testPartitioner();
         List<Range<Token>> ranges = new ArrayList<>();
         ranges.add(new Range<>(p.getToken(ByteBufferUtil.bytes("key1")), p.getToken(ByteBufferUtil.bytes("key1000"))));
         ranges.add(new Range<>(p.getToken(ByteBufferUtil.bytes("key5")), p.getToken(ByteBufferUtil.bytes("key500"))));
         ranges.add(new Range<>(p.getToken(ByteBufferUtil.bytes("key9")), p.getToken(ByteBufferUtil.bytes("key900"))));
         transfer(sstable, ranges);
-        assertEquals(1, cfs.getSSTables().size());
+        assertEquals(1, cfs.getLiveSSTables().size());
         assertEquals(7, Util.getRangeSlice(cfs).size());
     }
     */

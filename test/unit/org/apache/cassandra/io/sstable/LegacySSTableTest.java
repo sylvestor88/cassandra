@@ -136,7 +136,7 @@ public class LegacySSTableTest
     private void testStreaming(String version) throws Exception
     {
         SSTableReader sstable = SSTableReader.open(getDescriptor(version));
-        IPartitioner p = StorageService.getPartitioner();
+        IPartitioner p = sstable.getPartitioner();
         List<Range<Token>> ranges = new ArrayList<>();
         ranges.add(new Range<>(p.getMinimumToken(), p.getToken(ByteBufferUtil.bytes("100"))));
         ranges.add(new Range<>(p.getToken(ByteBufferUtil.bytes("100")), p.getMinimumToken()));
@@ -148,8 +148,8 @@ public class LegacySSTableTest
                                              .execute().get();
 
         ColumnFamilyStore cfs = Keyspace.open(KSNAME).getColumnFamilyStore(CFNAME);
-        assert cfs.getSSTables().size() == 1;
-        sstable = cfs.getSSTables().iterator().next();
+        assert cfs.getLiveSSTables().size() == 1;
+        sstable = cfs.getLiveSSTables().iterator().next();
         for (String keystring : TEST_DATA)
         {
             ByteBuffer key = bytes(keystring);

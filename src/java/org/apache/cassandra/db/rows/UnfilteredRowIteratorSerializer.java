@@ -27,7 +27,6 @@ import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
-import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
 /**
@@ -89,7 +88,7 @@ public class UnfilteredRowIteratorSerializer
     // Should only be used for the on-wire format.
     public void serialize(UnfilteredRowIterator iterator, DataOutputPlus out, SerializationHeader header, int version, int rowEstimate) throws IOException
     {
-        ByteBufferUtil.writeWithLength(iterator.partitionKey().getKey(), out);
+        ByteBufferUtil.writeWithVIntLength(iterator.partitionKey().getKey(), out);
 
         int flags = 0;
         if (iterator.isReverseOrder())
@@ -140,7 +139,7 @@ public class UnfilteredRowIteratorSerializer
 
         assert rowEstimate >= 0;
 
-        long size = TypeSizes.sizeofWithLength(iterator.partitionKey().getKey())
+        long size = ByteBufferUtil.serializedSizeWithVIntLength(iterator.partitionKey().getKey())
                   + 1; // flags
 
         if (iterator.isEmpty())
@@ -170,7 +169,7 @@ public class UnfilteredRowIteratorSerializer
 
     public Header deserializeHeader(DataInputPlus in, int version, CFMetaData metadata, SerializationHelper.Flag flag) throws IOException
     {
-        DecoratedKey key = StorageService.getPartitioner().decorateKey(ByteBufferUtil.readWithLength(in));
+        DecoratedKey key = metadata.decorateKey(ByteBufferUtil.readWithVIntLength(in));
         int flags = in.readUnsignedByte();
         boolean isReversed = (flags & IS_REVERSED) != 0;
         if ((flags & IS_EMPTY) != 0)
@@ -204,7 +203,7 @@ public class UnfilteredRowIteratorSerializer
         final SerializationHeader sHeader = header.sHeader;
         return new AbstractUnfilteredRowIterator(metadata, header.key, header.partitionDeletion, sHeader.columns(), header.staticRow, header.isReversed, sHeader.stats())
         {
-            private final Row.Builder builder = ArrayBackedRow.sortedBuilder(sHeader.columns().regulars);
+            private final Row.Builder builder = BTreeBackedRow.sortedBuilder(sHeader.columns().regulars);
 
             protected Unfiltered computeNext()
             {

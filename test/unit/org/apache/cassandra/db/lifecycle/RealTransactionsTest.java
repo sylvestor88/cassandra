@@ -119,7 +119,7 @@ public class RealTransactionsTest extends SchemaLoader
 
         SSTableReader ssTableReader = getSSTable(cfs, 100);
 
-        String dataFolder = cfs.getSSTables().iterator().next().descriptor.directory.getPath();
+        String dataFolder = cfs.getLiveSSTables().iterator().next().descriptor.directory.getPath();
         String transactionLogsFolder = StringUtils.join(dataFolder, File.separator, Directories.TRANSACTIONS_SUBDIR);
 
         assertTrue(new File(transactionLogsFolder).exists());
@@ -132,7 +132,7 @@ public class RealTransactionsTest extends SchemaLoader
     {
         createSSTable(cfs, numPartitions);
 
-        Set<SSTableReader> sstables = new HashSet<>(cfs.getSSTables());
+        Set<SSTableReader> sstables = new HashSet<>(cfs.getLiveSSTables());
         assertEquals(1, sstables.size());
         return sstables.iterator().next();
     }
@@ -145,7 +145,6 @@ public class RealTransactionsTest extends SchemaLoader
         String query = "INSERT INTO %s.%s (key, name, val) VALUES (?, ?, ?)";
 
         try (CQLSSTableWriter writer = CQLSSTableWriter.builder()
-                                                       .withPartitioner(StorageService.getPartitioner())
                                                        .inDirectory(cfs.directories.getDirectoryForNewSSTables())
                                                        .forTable(String.format(schema, cfs.keyspace.getName(), cfs.name))
                                                        .using(String.format(query, cfs.keyspace.getName(), cfs.name))
@@ -178,7 +177,6 @@ public class RealTransactionsTest extends SchemaLoader
                                                            0,
                                                            0,
                                                            0,
-                                                           DatabaseDescriptor.getPartitioner(),
                                                            SerializationHeader.make(cfs.metadata, txn.originals()),
                                                            txn));
                 while (ci.hasNext())

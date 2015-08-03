@@ -43,6 +43,7 @@ import org.apache.cassandra.io.util.BufferedSegmentedFile;
 import org.apache.cassandra.io.util.ChannelProxy;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.io.util.Memory;
+import org.apache.cassandra.io.util.RandomAccessReader;
 import org.apache.cassandra.io.util.SegmentedFile;
 import org.apache.cassandra.schema.KeyspaceMetadata;
 import org.apache.cassandra.schema.KeyspaceParams;
@@ -61,7 +62,7 @@ public class MockSchema
     public static final Keyspace ks = Keyspace.mockKS(KeyspaceMetadata.create("mockks", KeyspaceParams.simpleTransient(1)));
 
     public static final IndexSummary indexSummary;
-    private static final SegmentedFile segmentedFile = new BufferedSegmentedFile(new ChannelProxy(temp("mocksegmentedfile")), 0);
+    private static final SegmentedFile segmentedFile = new BufferedSegmentedFile(new ChannelProxy(temp("mocksegmentedfile")), RandomAccessReader.DEFAULT_BUFFER_SIZE, 0);
 
     public static Memtable memtable(ColumnFamilyStore cfs)
     {
@@ -116,11 +117,11 @@ public class MockSchema
                 throw new RuntimeException(e);
             }
         }
-        SerializationHeader header = SerializationHeader.make(cfs.metadata, Collections.EMPTY_LIST);
+        SerializationHeader header = SerializationHeader.make(cfs.metadata, Collections.emptyList());
         StatsMetadata metadata = (StatsMetadata) new MetadataCollector(cfs.metadata.comparator)
-                                                 .finalizeMetadata(Murmur3Partitioner.instance.getClass().getCanonicalName(), 0.01f, -1, header)
+                                                 .finalizeMetadata(cfs.metadata.partitioner.getClass().getCanonicalName(), 0.01f, -1, header)
                                                  .get(MetadataType.STATS);
-        SSTableReader reader = SSTableReader.internalOpen(descriptor, components, cfs.metadata, Murmur3Partitioner.instance,
+        SSTableReader reader = SSTableReader.internalOpen(descriptor, components, cfs.metadata,
                                                           segmentedFile.sharedCopy(), segmentedFile.sharedCopy(), indexSummary.sharedCopy(),
                                                           new AlwaysPresentFilter(), 1L, metadata, SSTableReader.OpenReason.NORMAL, header);
         reader.first = reader.last = readerBounds(generation);
@@ -138,7 +139,7 @@ public class MockSchema
     {
         String cfname = "mockcf" + (id.incrementAndGet());
         CFMetaData metadata = newCFMetaData(ksname, cfname);
-        return new ColumnFamilyStore(ks, cfname, Murmur3Partitioner.instance, 0, metadata, new Directories(metadata), false, false);
+        return new ColumnFamilyStore(ks, cfname, 0, metadata, new Directories(metadata), false, false);
     }
 
     private static CFMetaData newCFMetaData(String ksname, String cfname)
@@ -147,6 +148,7 @@ public class MockSchema
                                                 .addPartitionKey("key", UTF8Type.instance)
                                                 .addClusteringColumn("col", UTF8Type.instance)
                                                 .addRegularColumn("value", UTF8Type.instance)
+                                                .withPartitioner(Murmur3Partitioner.instance)
                                                 .build();
         metadata.caching(CachingOptions.NONE);
         return metadata;

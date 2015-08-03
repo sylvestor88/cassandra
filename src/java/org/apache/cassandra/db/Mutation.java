@@ -18,6 +18,7 @@
 package org.apache.cassandra.db;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.*;
 
 import org.apache.commons.lang3.StringUtils;
@@ -31,7 +32,6 @@ import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
-import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,6 +54,8 @@ public class Mutation implements IMutation
     // map of column family id to mutations for that column family.
     private final Map<UUID, PartitionUpdate> modifications;
 
+    // Time at which this mutation was instantiated
+    public final long createdAt = System.currentTimeMillis();
     public Mutation(String keyspaceName, DecoratedKey key)
     {
         this(keyspaceName, key, new HashMap<UUID, PartitionUpdate>());
@@ -105,6 +107,7 @@ public class Mutation implements IMutation
     public Mutation add(PartitionUpdate update)
     {
         assert update != null;
+        assert update.partitionKey().getPartitioner() == key.getPartitioner();
         PartitionUpdate prev = modifications.put(update.metadata().cfId, update);
         if (prev != null)
             // developer error
@@ -248,12 +251,19 @@ public class Mutation implements IMutation
             if (version < MessagingService.VERSION_20)
                 out.writeUTF(mutation.getKeyspaceName());
 
-            if (version < MessagingService.VERSION_30)
-                ByteBufferUtil.writeWithShortLength(mutation.key().getKey(), out);
-
             /* serialize the modifications in the mutation */
             int size = mutation.modifications.size();
-            out.writeInt(size);
+
+            if (version < MessagingService.VERSION_30)
+            {
+                ByteBufferUtil.writeWithShortLength(mutation.key().getKey(), out);
+                out.writeInt(size);
+            }
+            else
+            {
+                out.writeVInt(size);
+            }
+
             assert size > 0;
             for (Map.Entry<UUID, PartitionUpdate> entry : mutation.modifications.entrySet())
                 PartitionUpdate.serializer.serialize(entry.getValue(), out, version);
@@ -261,34 +271,38 @@ public class Mutation implements IMutation
 
         public Mutation deserialize(DataInputPlus in, int version, SerializationHelper.Flag flag) throws IOException
         {
-            String keyspaceName = null; // will always be set from cf.metadata but javac isn't smart enough to see that
             if (version < MessagingService.VERSION_20)
-                keyspaceName = in.readUTF();
+                in.readUTF(); // read pre-2.0 keyspace name
 
-            DecoratedKey key = null;
+            ByteBuffer key = null;
+            int size;
             if (version < MessagingService.VERSION_30)
-                key = StorageService.getPartitioner().decorateKey(ByteBufferUtil.readWithShortLength(in));
+            {
+                key = ByteBufferUtil.readWithShortLength(in);
+                size = in.readInt();
+            }
+            else
+            {
+                size = (int)in.readVInt();
+            }
 
-            int size = in.readInt();
             assert size > 0;
 
+            PartitionUpdate update = PartitionUpdate.serializer.deserialize(in, version, flag, key);
             if (size == 1)
-                return new Mutation(PartitionUpdate.serializer.deserialize(in, version, flag, key));
+                return new Mutation(update);
 
             Map<UUID, PartitionUpdate> modifications = new HashMap<>(size);
-            PartitionUpdate update = null;
-            for (int i = 0; i < size; ++i)
+            DecoratedKey dk = update.partitionKey();
+
+            modifications.put(update.metadata().cfId, update);
+            for (int i = 1; i < size; ++i)
             {
-                update = PartitionUpdate.serializer.deserialize(in, version, flag, key);
+                update = PartitionUpdate.serializer.deserialize(in, version, flag, dk);
                 modifications.put(update.metadata().cfId, update);
             }
 
-            if (keyspaceName == null)
-                keyspaceName = update.metadata().ksName;
-            if (key == null)
-                key = update.partitionKey();
-
-            return new Mutation(keyspaceName, key, modifications);
+            return new Mutation(update.metadata().ksName, dk, modifications);
         }
 
         public Mutation deserialize(DataInputPlus in, int version) throws IOException
@@ -307,9 +321,13 @@ public class Mutation implements IMutation
             {
                 int keySize = mutation.key().getKey().remaining();
                 size += TypeSizes.sizeof((short) keySize) + keySize;
+                size += TypeSizes.sizeof(mutation.modifications.size());
+            }
+            else
+            {
+                size += TypeSizes.sizeofVInt(mutation.modifications.size());
             }
 
-            size += TypeSizes.sizeof(mutation.modifications.size());
             for (Map.Entry<UUID, PartitionUpdate> entry : mutation.modifications.entrySet())
                 size += PartitionUpdate.serializer.serializedSize(entry.getValue(), version);
 

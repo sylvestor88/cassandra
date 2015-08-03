@@ -92,6 +92,8 @@ public class Config
     public Integer concurrent_reads = 32;
     public Integer concurrent_writes = 32;
     public Integer concurrent_counter_writes = 32;
+    public Integer concurrent_batchlog_writes = 32;
+    public Integer concurrent_materialized_view_writes = 32;
 
     @Deprecated
     public Integer concurrent_replicates = null;
@@ -167,7 +169,8 @@ public class Config
     public int commitlog_segment_size_in_mb = 32;
     public ParameterizedClass commitlog_compression;
     public int commitlog_max_compression_buffers_in_pool = 3;
- 
+    public TransparentDataEncryptionOptions transparent_data_encryption_options = new TransparentDataEncryptionOptions();
+
     @Deprecated
     public int commitlog_periodic_queue_size = -1;
 
@@ -221,6 +224,12 @@ public class Config
     public Integer file_cache_size_in_mb = 512;
 
     public boolean buffer_pool_use_heap_if_exhausted = true;
+
+    public DiskOptimizationStrategy disk_optimization_strategy = DiskOptimizationStrategy.ssd;
+
+    public double disk_optimization_estimate_percentile = 0.95;
+
+    public double disk_optimization_page_cross_chance = 0.1;
 
     public boolean inter_dc_tcp_nodelay = true;
 
@@ -308,17 +317,17 @@ public class Config
         isClientMode = clientMode;
     }
 
-    public static enum CommitLogSync
+    public enum CommitLogSync
     {
         periodic,
         batch
     }
-    public static enum InternodeCompression
+    public enum InternodeCompression
     {
         all, none, dc
     }
 
-    public static enum DiskAccessMode
+    public enum DiskAccessMode
     {
         auto,
         mmap,
@@ -326,7 +335,7 @@ public class Config
         standard,
     }
 
-    public static enum MemtableAllocationType
+    public enum MemtableAllocationType
     {
         unslabbed_heap_buffers,
         heap_buffers,
@@ -334,7 +343,7 @@ public class Config
         offheap_objects
     }
 
-    public static enum DiskFailurePolicy
+    public enum DiskFailurePolicy
     {
         best_effort,
         stop,
@@ -343,7 +352,7 @@ public class Config
         die
     }
 
-    public static enum CommitFailurePolicy
+    public enum CommitFailurePolicy
     {
         stop,
         stop_commit,
@@ -351,15 +360,21 @@ public class Config
         die,
     }
 
-    public static enum UserFunctionTimeoutPolicy
+    public enum UserFunctionTimeoutPolicy
     {
         ignore,
         die,
         die_immediate
     }
 
-    public static enum RequestSchedulerId
+    public enum RequestSchedulerId
     {
         keyspace
+    }
+
+    public enum DiskOptimizationStrategy
+    {
+        ssd,
+        spinning
     }
 }

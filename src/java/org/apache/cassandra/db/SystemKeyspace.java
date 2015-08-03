@@ -33,7 +33,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.cql3.QueryProcessor;
 import org.apache.cassandra.cql3.UntypedResultSet;
 import org.apache.cassandra.cql3.functions.*;
@@ -101,6 +100,8 @@ public final class SystemKeyspace
     public static final String SSTABLE_ACTIVITY = "sstable_activity";
     public static final String SIZE_ESTIMATES = "size_estimates";
     public static final String AVAILABLE_RANGES = "available_ranges";
+    public static final String MATERIALIZED_VIEWS_BUILDS_IN_PROGRESS = "materialized_views_builds_in_progress";
+    public static final String BUILT_MATERIALIZED_VIEWS = "built_materialized_views";
 
     @Deprecated public static final String LEGACY_KEYSPACES = "schema_keyspaces";
     @Deprecated public static final String LEGACY_COLUMNFAMILIES = "schema_columnfamilies";
@@ -261,6 +262,24 @@ public final class SystemKeyspace
                 + "ranges set<blob>,"
                 + "PRIMARY KEY ((keyspace_name)))");
 
+    private static final CFMetaData MaterializedViewsBuildsInProgress =
+        compile(MATERIALIZED_VIEWS_BUILDS_IN_PROGRESS,
+                "materialized views builds current progress",
+                "CREATE TABLE %s ("
+                + "keyspace_name text,"
+                + "view_name text,"
+                + "last_token varchar,"
+                + "generation_number int,"
+                + "PRIMARY KEY ((keyspace_name), view_name))");
+
+    private static final CFMetaData BuiltMaterializedViews =
+        compile(BUILT_MATERIALIZED_VIEWS,
+                "built materialized views",
+                "CREATE TABLE %s ("
+                + "keyspace_name text,"
+                + "view_name text,"
+                + "PRIMARY KEY ((keyspace_name), view_name))");
+
     @Deprecated
     public static final CFMetaData LegacyKeyspaces =
         compile(LEGACY_KEYSPACES,
@@ -401,6 +420,8 @@ public final class SystemKeyspace
                          SSTableActivity,
                          SizeEstimates,
                          AvailableRanges,
+                         MaterializedViewsBuildsInProgress,
+                         BuiltMaterializedViews,
                          LegacyKeyspaces,
                          LegacyColumnfamilies,
                          LegacyColumns,
@@ -428,11 +449,6 @@ public final class SystemKeyspace
         COMPLETED,
         IN_PROGRESS,
         DECOMMISSIONED
-    }
-
-    private static DecoratedKey decorate(ByteBuffer key)
-    {
-        return StorageService.getPartitioner().decorateKey(key);
     }
 
     public static void finishStartup()
@@ -491,6 +507,82 @@ public final class SystemKeyspace
     {
         UntypedResultSet queryResultSet = executeInternal(String.format("SELECT * from system.%s", COMPACTION_HISTORY));
         return CompactionHistoryTabularData.from(queryResultSet);
+    }
+
+    public static boolean isViewBuilt(String keyspaceName, String viewName)
+    {
+        String req = "SELECT view_name FROM %s.\"%s\" WHERE keyspace_name=? AND view_name=?";
+        UntypedResultSet result = executeInternal(String.format(req, NAME, BUILT_MATERIALIZED_VIEWS), keyspaceName, viewName);
+        return !result.isEmpty();
+    }
+
+    public static void setMaterializedViewBuilt(String keyspaceName, String viewName)
+    {
+        String req = "INSERT INTO %s.\"%s\" (keyspace_name, view_name) VALUES (?, ?)";
+        executeInternal(String.format(req, NAME, BUILT_MATERIALIZED_VIEWS), keyspaceName, viewName);
+        forceBlockingFlush(BUILT_MATERIALIZED_VIEWS);
+    }
+
+
+    public static void setMaterializedViewRemoved(String keyspaceName, String viewName)
+    {
+        String buildReq = "DELETE FROM %S.%s WHERE keyspace_name = ? AND view_name = ?";
+        executeInternal(String.format(buildReq, NAME, MATERIALIZED_VIEWS_BUILDS_IN_PROGRESS), keyspaceName, viewName);
+        forceBlockingFlush(MATERIALIZED_VIEWS_BUILDS_IN_PROGRESS);
+
+        String builtReq = "DELETE FROM %s.\"%s\" WHERE keyspace_name = ? AND view_name = ?";
+        executeInternal(String.format(builtReq, NAME, BUILT_MATERIALIZED_VIEWS), keyspaceName, viewName);
+        forceBlockingFlush(BUILT_MATERIALIZED_VIEWS);
+    }
+
+    public static void beginMaterializedViewBuild(String ksname, String viewName, int generationNumber)
+    {
+        executeInternal(String.format("INSERT INTO system.%s (keyspace_name, view_name, generation_number) VALUES (?, ?, ?)", MATERIALIZED_VIEWS_BUILDS_IN_PROGRESS),
+                        ksname,
+                        viewName,
+                        generationNumber);
+    }
+
+    public static void finishMaterializedViewBuildStatus(String ksname, String viewName)
+    {
+        // We flush the view built first, because if we fail now, we'll restart at the last place we checkpointed
+        // materialized view build.
+        // If we flush the delete first, we'll have to restart from the beginning.
+        // Also, if the build succeeded, but the materialized view build failed, we will be able to skip the
+        // materialized view build check next boot.
+        setMaterializedViewBuilt(ksname, viewName);
+        forceBlockingFlush(BUILT_MATERIALIZED_VIEWS);
+        executeInternal(String.format("DELETE FROM system.%s WHERE keyspace_name = ? AND view_name = ?", MATERIALIZED_VIEWS_BUILDS_IN_PROGRESS), ksname, viewName);
+        forceBlockingFlush(MATERIALIZED_VIEWS_BUILDS_IN_PROGRESS);
+    }
+
+    public static void updateMaterializedViewBuildStatus(String ksname, String viewName, Token token)
+    {
+        String req = "INSERT INTO system.%s (keyspace_name, view_name, last_token) VALUES (?, ?, ?)";
+        Token.TokenFactory factory = MaterializedViewsBuildsInProgress.partitioner.getTokenFactory();
+        executeInternal(String.format(req, MATERIALIZED_VIEWS_BUILDS_IN_PROGRESS), ksname, viewName, factory.toString(token));
+    }
+
+    public static Pair<Integer, Token> getMaterializedViewBuildStatus(String ksname, String viewName)
+    {
+        String req = "SELECT generation_number, last_token FROM system.%s WHERE keyspace_name = ? AND view_name = ?";
+        UntypedResultSet queryResultSet = executeInternal(String.format(req, MATERIALIZED_VIEWS_BUILDS_IN_PROGRESS), ksname, viewName);
+        if (queryResultSet == null || queryResultSet.isEmpty())
+            return null;
+
+        UntypedResultSet.Row row = queryResultSet.one();
+
+        Integer generation = null;
+        Token lastKey = null;
+        if (row.has("generation_number"))
+            generation = row.getInt("generation_number");
+        if (row.has("last_key"))
+        {
+            Token.TokenFactory factory = MaterializedViewsBuildsInProgress.partitioner.getTokenFactory();
+            lastKey = factory.fromString(row.getString("last_key"));
+        }
+
+        return Pair.create(generation, lastKey);
     }
 
     public static synchronized void saveTruncationRecord(ColumnFamilyStore cfs, long truncatedAt, ReplayPosition position)
@@ -620,7 +712,9 @@ public final class SystemKeyspace
 
     private static Set<String> tokensAsSet(Collection<Token> tokens)
     {
-        Token.TokenFactory factory = StorageService.getPartitioner().getTokenFactory();
+        if (tokens.isEmpty())
+            return Collections.emptySet();
+        Token.TokenFactory factory = StorageService.instance.getTokenFactory();
         Set<String> s = new HashSet<>(tokens.size());
         for (Token tk : tokens)
             s.add(factory.toString(tk));
@@ -629,7 +723,7 @@ public final class SystemKeyspace
 
     private static Collection<Token> deserializeTokens(Collection<String> tokensStrings)
     {
-        Token.TokenFactory factory = StorageService.getPartitioner().getTokenFactory();
+        Token.TokenFactory factory = StorageService.instance.getTokenFactory();
         List<Token> tokens = new ArrayList<>(tokensStrings.size());
         for (String tk : tokensStrings)
             tokens.add(factory.fromString(tk));
@@ -808,7 +902,7 @@ public final class SystemKeyspace
         if (result.isEmpty() || !result.one().has("cluster_name"))
         {
             // this is a brand new node
-            if (!cfs.getSSTables().isEmpty())
+            if (!cfs.getLiveSSTables().isEmpty())
                 throw new ConfigurationException("Found system keyspace files, but they couldn't be loaded!");
 
             // no system files.  this is a new node.
@@ -1068,8 +1162,7 @@ public final class SystemKeyspace
     public static void updateSizeEstimates(String keyspace, String table, Map<Range<Token>, Pair<Long, Long>> estimates)
     {
         long timestamp = FBUtilities.timestampMicros();
-        DecoratedKey key = decorate(UTF8Type.instance.decompose(keyspace));
-        PartitionUpdate update = new PartitionUpdate(SizeEstimates, key, SizeEstimates.partitionColumns(), estimates.size());
+        PartitionUpdate update = new PartitionUpdate(SizeEstimates, UTF8Type.instance.decompose(keyspace), SizeEstimates.partitionColumns(), estimates.size());
         Mutation mutation = new Mutation(update);
 
         // delete all previous values with a single range tombstone.

@@ -18,30 +18,38 @@
 package org.apache.cassandra.db.marshal;
 
 import java.nio.ByteBuffer;
+import java.util.Iterator;
 
+import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.cql3.Term;
 import org.apache.cassandra.db.PartitionPosition;
 import org.apache.cassandra.serializers.TypeSerializer;
 import org.apache.cassandra.serializers.MarshalException;
-
 import org.apache.cassandra.dht.IPartitioner;
-import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.FBUtilities;
 
 /** for sorting columns representing row keys in the row ordering as determined by a partitioner.
  * Not intended for user-defined CFs, and will in fact error out if used with such. */
-public class LocalByPartionerType extends AbstractType<ByteBuffer>
+public class PartitionerDefinedOrder extends AbstractType<ByteBuffer>
 {
     private final IPartitioner partitioner;
 
-    public LocalByPartionerType(IPartitioner partitioner)
+    public PartitionerDefinedOrder(IPartitioner partitioner)
     {
         this.partitioner = partitioner;
     }
 
-    public static LocalByPartionerType getInstance(TypeParser parser)
+    public static AbstractType<?> getInstance(TypeParser parser)
     {
-        return new LocalByPartionerType(StorageService.getPartitioner());
+        IPartitioner partitioner = DatabaseDescriptor.getPartitioner();
+        Iterator<String> argIterator = parser.getKeyValueParameters().keySet().iterator();
+        if (argIterator.hasNext())
+        {
+            partitioner = FBUtilities.newPartitioner(argIterator.next());
+            assert !argIterator.hasNext();
+        }
+        return partitioner.partitionOrdering();
     }
 
     @Override
@@ -93,5 +101,11 @@ public class LocalByPartionerType extends AbstractType<ByteBuffer>
     public TypeSerializer<ByteBuffer> getSerializer()
     {
         throw new UnsupportedOperationException("You can't do this with a local partitioner.");
+    }
+
+    @Override
+    public String toString()
+    {
+        return String.format("%s(%s)", getClass().getName(), partitioner.getClass().getName());
     }
 }

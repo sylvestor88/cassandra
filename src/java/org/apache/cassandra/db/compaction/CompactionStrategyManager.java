@@ -23,9 +23,11 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Callable;
 
+import com.google.common.collect.ImmutableMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,6 +35,8 @@ import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.Memtable;
 import org.apache.cassandra.db.lifecycle.LifecycleTransaction;
+import org.apache.cassandra.db.lifecycle.SSTableSet;
+import org.apache.cassandra.db.lifecycle.View;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
@@ -59,6 +63,7 @@ public class CompactionStrategyManager implements INotificationConsumer
     private volatile AbstractCompactionStrategy unrepaired;
     private volatile boolean enabled = true;
     public boolean isActive = true;
+    private Map<String, String> options;
 
     public CompactionStrategyManager(ColumnFamilyStore cfs)
     {
@@ -68,6 +73,7 @@ public class CompactionStrategyManager implements INotificationConsumer
         reload(cfs.metadata);
         String optionValue = cfs.metadata.compactionStrategyOptions.get(COMPACTION_ENABLED);
         enabled = optionValue == null || Boolean.parseBoolean(optionValue);
+        options = ImmutableMap.copyOf(cfs.metadata.compactionStrategyOptions);
     }
 
     /**
@@ -99,22 +105,6 @@ public class CompactionStrategyManager implements INotificationConsumer
         }
     }
 
-    /**
-     * Disable compaction - used with nodetool disableautocompaction for example
-     */
-    public void disable()
-    {
-        enabled = false;
-    }
-
-    /**
-     * re-enable disabled compaction.
-     */
-    public void enable()
-    {
-        enabled = true;
-    }
-
     public boolean isEnabled()
     {
         return enabled && isActive;
@@ -138,7 +128,7 @@ public class CompactionStrategyManager implements INotificationConsumer
 
     private void startup()
     {
-        for (SSTableReader sstable : cfs.getSSTables())
+        for (SSTableReader sstable : cfs.getSSTables(SSTableSet.CANONICAL))
         {
             if (sstable.openReason != SSTableReader.OpenReason.EARLY)
                 getCompactionStrategyFor(sstable).addSSTable(sstable);
@@ -177,7 +167,6 @@ public class CompactionStrategyManager implements INotificationConsumer
                 && repaired.options.equals(metadata.compactionStrategyOptions) // todo: assumes all have the same options
                 && unrepaired.options.equals(metadata.compactionStrategyOptions))
             return;
-
         reload(metadata);
     }
 
@@ -189,12 +178,18 @@ public class CompactionStrategyManager implements INotificationConsumer
      */
     public synchronized void reload(CFMetaData metadata)
     {
+        boolean disabledWithJMX = !isEnabled() && shouldBeEnabled();
         if (repaired != null)
             repaired.shutdown();
         if (unrepaired != null)
             unrepaired.shutdown();
         repaired = metadata.createCompactionStrategyInstance(cfs);
         unrepaired = metadata.createCompactionStrategyInstance(cfs);
+        options = ImmutableMap.copyOf(metadata.compactionStrategyOptions);
+        if (disabledWithJMX || !shouldBeEnabled())
+            disable();
+        else
+            enable();
         startup();
     }
 
@@ -331,6 +326,26 @@ public class CompactionStrategyManager implements INotificationConsumer
         }
     }
 
+    public void enable()
+    {
+        if (repaired != null)
+            repaired.enable();
+        if (unrepaired != null)
+            unrepaired.enable();
+        // enable this last to make sure the strategies are ready to get calls.
+        enabled = true;
+    }
+
+    public void disable()
+    {
+        // disable this first avoid asking disabled strategies for compaction tasks
+        enabled = false;
+        if (repaired != null)
+            repaired.disable();
+        if (unrepaired != null)
+            unrepaired.disable();
+    }
+
     /**
      * Create ISSTableScanner from the given sstables
      *
@@ -411,7 +426,7 @@ public class CompactionStrategyManager implements INotificationConsumer
                     return tasks;
                 }
             }
-        }, false);
+        }, false, false);
     }
 
     public AbstractCompactionTask getUserDefinedTask(Collection<SSTableReader> sstables, int gcBefore)
@@ -430,7 +445,7 @@ public class CompactionStrategyManager implements INotificationConsumer
 
     public boolean shouldBeEnabled()
     {
-        String optionValue = cfs.metadata.compactionStrategyOptions.get(COMPACTION_ENABLED);
+        String optionValue = options.get(COMPACTION_ENABLED);
         return optionValue == null || Boolean.parseBoolean(optionValue);
     }
 

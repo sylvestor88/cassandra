@@ -28,6 +28,7 @@ import org.apache.cassandra.cql3.ColumnIdentifier;
 import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.dht.*;
 import org.apache.cassandra.dht.Token;
+import org.apache.cassandra.dht.Token.TokenFactory;
 import org.apache.cassandra.io.sstable.SSTableLoader;
 import org.apache.cassandra.schema.SchemaKeyspace;
 
@@ -64,11 +65,10 @@ public class NativeSSTableLoaderClient extends SSTableLoader.Client
 
             Metadata metadata = cluster.getMetadata();
 
-            setPartitioner(metadata.getPartitioner());
-
             Set<TokenRange> tokenRanges = metadata.getTokenRanges();
 
-            Token.TokenFactory tokenFactory = getPartitioner().getTokenFactory();
+            IPartitioner partitioner = FBUtilities.newPartitioner(metadata.getPartitioner());
+            TokenFactory tokenFactory = partitioner.getTokenFactory();
 
             for (TokenRange tokenRange : tokenRanges)
             {
@@ -79,7 +79,7 @@ public class NativeSSTableLoaderClient extends SSTableLoader.Client
                     addRangeForEndpoint(range, endpoint.getAddress());
             }
 
-            tables.putAll(fetchTablesMetadata(keyspace, session));
+            tables.putAll(fetchTablesMetadata(keyspace, session, partitioner));
         }
     }
 
@@ -99,8 +99,11 @@ public class NativeSSTableLoaderClient extends SSTableLoader.Client
      * SchemaKeyspace.createTableFromTableRowAndColumnRows().
      * It might be safer to have a simple wrapper of the driver ResultSet/Row implementing
      * UntypedResultSet/UntypedResultSet.Row and reuse the original method.
+     *
+     * Note: It is not safe for this class to use static methods from SchemaKeyspace (static final fields are ok)
+     * as that triggers initialization of the class, which fails in client mode.
      */
-    private static Map<String, CFMetaData> fetchTablesMetadata(String keyspace, Session session)
+    private static Map<String, CFMetaData> fetchTablesMetadata(String keyspace, Session session, IPartitioner partitioner)
     {
         Map<String, CFMetaData> tables = new HashMap<>();
         String query = String.format("SELECT * FROM %s.%s WHERE keyspace_name = ?", SchemaKeyspace.NAME, SchemaKeyspace.TABLES);
@@ -112,12 +115,13 @@ public class NativeSSTableLoaderClient extends SSTableLoader.Client
 
             Set<CFMetaData.Flag> flags = row.isNull("flags")
                                        ? Collections.emptySet()
-                                       : SchemaKeyspace.flagsFromStrings(row.getSet("flags", String.class));
+                                       : CFMetaData.flagsFromStrings(row.getSet("flags", String.class));
 
             boolean isSuper = flags.contains(CFMetaData.Flag.SUPER);
             boolean isCounter = flags.contains(CFMetaData.Flag.COUNTER);
             boolean isDense = flags.contains(CFMetaData.Flag.DENSE);
             boolean isCompound = flags.contains(CFMetaData.Flag.COMPOUND);
+            boolean isMaterializedView = flags.contains(CFMetaData.Flag.MATERIALIZEDVIEW);
 
             String columnsQuery = String.format("SELECT * FROM %s.%s WHERE keyspace_name = ? AND table_name = ?",
                                                 SchemaKeyspace.NAME,
@@ -127,7 +131,16 @@ public class NativeSSTableLoaderClient extends SSTableLoader.Client
             for (Row colRow : session.execute(columnsQuery, keyspace, name))
                 defs.add(createDefinitionFromRow(colRow, keyspace, name));
 
-            tables.put(name, CFMetaData.create(keyspace, name, id, isDense, isCompound, isSuper, isCounter, defs));
+            tables.put(name, CFMetaData.create(keyspace,
+                                               name,
+                                               id,
+                                               isDense,
+                                               isCompound,
+                                               isSuper,
+                                               isCounter,
+                                               isMaterializedView,
+                                               defs,
+                                               partitioner));
         }
 
         return tables;

@@ -19,7 +19,6 @@ package org.apache.cassandra.io.sstable.format.big;
 
 import java.io.*;
 import java.util.Map;
-import java.util.Set;
 
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.lifecycle.LifecycleTransaction;
@@ -32,7 +31,6 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.rows.*;
-import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.io.FSWriteError;
 import org.apache.cassandra.io.compress.CompressedSequentialWriter;
 import org.apache.cassandra.io.sstable.metadata.MetadataCollector;
@@ -62,12 +60,11 @@ public class BigTableWriter extends SSTableWriter
                           Long keyCount, 
                           Long repairedAt, 
                           CFMetaData metadata, 
-                          IPartitioner partitioner, 
                           MetadataCollector metadataCollector, 
                           SerializationHeader header,
                           LifecycleTransaction txn)
     {
-        super(descriptor, keyCount, repairedAt, metadata, partitioner, metadataCollector, header);
+        super(descriptor, keyCount, repairedAt, metadata, metadataCollector, header);
         txn.trackNew(this); // must track before any files are created
 
         if (compression)
@@ -243,12 +240,12 @@ public class BigTableWriter extends SSTableWriter
         StatsMetadata stats = statsMetadata();
         assert boundary.indexLength > 0 && boundary.dataLength > 0;
         // open the reader early
-        SegmentedFile ifile = iwriter.builder.complete(descriptor.filenameFor(Component.PRIMARY_INDEX), boundary.indexLength);
-        SegmentedFile dfile = dbuilder.complete(descriptor.filenameFor(Component.DATA), boundary.dataLength);
+        IndexSummary indexSummary = iwriter.summary.build(metadata.partitioner, boundary);
+        SegmentedFile ifile = iwriter.builder.buildIndex(descriptor, indexSummary, boundary);
+        SegmentedFile dfile = dbuilder.buildData(descriptor, stats, boundary);
         SSTableReader sstable = SSTableReader.internalOpen(descriptor,
                                                            components, metadata,
-                                                           partitioner, ifile,
-                                                           dfile, iwriter.summary.build(partitioner, boundary),
+                                                           ifile, dfile, indexSummary,
                                                            iwriter.bf.sharedCopy(), maxDataAge, stats, SSTableReader.OpenReason.EARLY, header);
 
         // now it's open, find the ACTUAL last readable key (i.e. for which the data file has also been flushed)
@@ -274,15 +271,15 @@ public class BigTableWriter extends SSTableWriter
 
         StatsMetadata stats = statsMetadata();
         // finalize in-memory state for the reader
-        SegmentedFile ifile = iwriter.builder.complete(desc.filenameFor(Component.PRIMARY_INDEX));
-        SegmentedFile dfile = dbuilder.complete(desc.filenameFor(Component.DATA));
+        IndexSummary indexSummary = iwriter.summary.build(this.metadata.partitioner);
+        SegmentedFile ifile = iwriter.builder.buildIndex(desc, indexSummary);
+        SegmentedFile dfile = dbuilder.buildData(desc, stats);
         SSTableReader sstable = SSTableReader.internalOpen(desc,
                                                            components,
                                                            this.metadata,
-                                                           partitioner,
                                                            ifile,
                                                            dfile,
-                                                           iwriter.summary.build(partitioner),
+                                                           indexSummary,
                                                            iwriter.bf.sharedCopy(),
                                                            maxDataAge,
                                                            stats,
@@ -473,7 +470,7 @@ public class BigTableWriter extends SSTableWriter
 
             // save summary
             summary.prepareToCommit();
-            try (IndexSummary summary = iwriter.summary.build(partitioner))
+            try (IndexSummary summary = iwriter.summary.build(getPartitioner()))
             {
                 SSTableReader.saveSummary(descriptor, first, last, iwriter.builder, dbuilder, summary);
             }

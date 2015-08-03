@@ -1,15 +1,13 @@
 3.0
-<<<<<<< HEAD
- * Implement proper sandboxing for UDFs (CASSANDRA-9402)
-=======
+ * Add transparent data encryption core classes (CASSANDRA-9945)
+ * Implement proper sandboxing for UDFs (CASSANDRA-9402, 9890)
  * Simplify (and unify) cleanup of compaction leftovers (CASSANDRA-7066)
->>>>>>> Introduce safer durable sstable membership management
  * Allow extra schema definitions in cassandra-stress yaml (CASSANDRA-9850)
  * Metrics should use up to date nomenclature (CASSANDRA-9448)
  * Change CREATE/ALTER TABLE syntax for compression (CASSANDRA-8384)
  * Cleanup crc and adler code for java 8 (CASSANDRA-9650)
- * Storage engine refactor (CASSANDRA-8099, 9743, 9746, 9759, 9781, 9808, 9825, 9848,
-   9705, 9859, 9867, 9874, 9828, 9801)
+ * Storage engine refactor (CASSANDRA-8099, 9743, 9746, 9759, 9781, 9808, 9825,
+   9848, 9705, 9859, 9867, 9874, 9828, 9801)
  * Update Guava to 18.0 (CASSANDRA-9653)
  * Bloom filter false positive ratio is not honoured (CASSANDRA-8413)
  * New option for cassandra-stress to leave a ratio of columns null (CASSANDRA-9522)
@@ -22,20 +20,30 @@
  * Change gossip stabilization to use endpoit size (CASSANDRA-9401)
  * Change default garbage collector to G1 (CASSANDRA-7486)
  * Populate TokenMetadata early during startup (CASSANDRA-9317)
- * undeprecate cache recentHitRate (CASSANDRA-6591)
- * Add support for selectively varint encoding fields (CASSANDRA-9499)
+ * Undeprecate cache recentHitRate (CASSANDRA-6591)
+ * Add support for selectively varint encoding fields (CASSANDRA-9499, 9865)
+ * Materialized Views (CASSANDRA-6477)
 
 
 2.2.1
+ * Avoid grouping sstables for anticompaction with DTCS (CASSANDRA-9900)
  * UDF / UDA execution time in trace (CASSANDRA-9723)
+ * Fix broken internode SSL (CASSANDRA-9884)
+Merged from 2.1:
+ * Cannot replace token does not exist - DN node removed as Fat Client (CASSANDRA-9871)
+ * Fix handling of enable/disable autocompaction (CASSANDRA-9899)
+ * Add consistency level to tracing ouput (CASSANDRA-9827)
  * Remove repair snapshot leftover on startup (CASSANDRA-7357)
  * Use random nodes for batch log when only 2 racks (CASSANDRA-8735)
+ * Ensure atomicity inside thrift and stream session (CASSANDRA-7757)
 Merged from 2.0:
  * Log when messages are dropped due to cross_node_timeout (CASSANDRA-9793)
+ * Don't track hotness when opening from snapshot for validation (CASSANDRA-9382)
 
 
 2.2.0
- * Fix cqlsh copy methods and other windows specific issues (CASSANDRA-9795) 
+ * Allow the selection of columns together with aggregates (CASSANDRA-9767)
+ * Fix cqlsh copy methods and other windows specific issues (CASSANDRA-9795)
  * Don't wrap byte arrays in SequentialWriter (CASSANDRA-9797)
  * sum() and avg() functions missing for smallint and tinyint types (CASSANDRA-9671)
  * Revert CASSANDRA-9542 (allow native functions in UDA) (CASSANDRA-9771)
@@ -47,6 +55,7 @@ Merged from 2.1:
  * (cqlsh) Allow the SSL protocol version to be specified through the
     config file or environment variables (CASSANDRA-9544)
 Merged from 2.0:
+ * Don't cast expected bf size to an int (CASSANDRA-9959)
  * checkForEndpointCollision fails for legitimate collisions (CASSANDRA-9765)
  * Complete CASSANDRA-8448 fix (CASSANDRA-9519)
  * Don't include auth credentials in debug log (CASSANDRA-9682)
@@ -1181,6 +1190,7 @@ Merged from 1.2:
  * Native protocol v3 (CASSANDRA-6855)
  * Optimize Cell liveness checks and clean up Cell (CASSANDRA-7119)
  * Support consistent range movements (CASSANDRA-2434)
+ * Display min timestamp in sstablemetadata viewer (CASSANDRA-6767)
 Merged from 2.0:
  * Avoid race-prone second "scrub" of system keyspace (CASSANDRA-6797)
  * Pool CqlRecordWriter clients by inetaddress rather than Range

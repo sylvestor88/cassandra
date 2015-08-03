@@ -342,6 +342,11 @@ seed_provider:
 concurrent_reads: 32
 concurrent_writes: 32
 concurrent_counter_writes: 32
+concurrent_batchlog_writes: 32
+
+# For materialized view writes, as there is a read involved, so this should
+# be limited by the less of concurrent reads or concurrent writes.
+concurrent_materialized_view_writes: 32
 
 # Maximum memory to use for pooling sstable buffers. Defaults to the smaller
 # of 1/4 of heap or 512MB. This pool is allocated off-heap, so is in addition
@@ -354,7 +359,13 @@ concurrent_counter_writes: 32
 
 # buffer_pool_use_heap_if_exhausted: true
 
-# Total permitted memory to use for memtables. Cassandra will stop 
+# The strategy for optimizing disk read
+# Possible values are:
+# ssd (for solid state disks, the default)
+# spinning (for spinning disks)
+# disk_optimization_strategy: ssd
+
+# Total permitted memory to use for memtables. Cassandra will stop
 # accepting writes when the limit is exceeded until a flush completes,
 # and will trigger a flush based on memtable_cleanup_threshold
 # If omitted, Cassandra will set both to 1/4 the size of the heap.
