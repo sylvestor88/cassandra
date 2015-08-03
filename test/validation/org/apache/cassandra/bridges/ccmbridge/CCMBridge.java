@@ -20,6 +20,7 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.util.Map;
 
@@ -84,8 +85,7 @@ public class CCMBridge extends Bridge
 
     public String readClusterLogs(String testName)
     {
-        String result = executeAndRead("ccm checklogerror");
-        return result;
+        return executeAndRead("ccm checklogerror");
     }
 
     public void updateConf(Map<String, String> options)
@@ -180,24 +180,29 @@ public class CCMBridge extends Bridge
         }
     }
 
-    private String executeAndReadWithToolOptions(String command, String options)
+    private InputStream executeAndStream(String command, Object... args)
+    {
+        try
+        {
+            String fullCommand = String.format(command, args) + " --config-dir=" + ccmDir;
+            logger.debug("Executing: " + fullCommand);
+            Process p = runtime.exec(fullCommand, null, CASSANDRA_DIR);
+            return p.getInputStream();
+        }
+        catch (IOException e)
+        {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private InputStream executeAndReadWithToolOptions(String command, String options)
     {
         try
         {
             String fullCommand = command + " --config-dir=" + ccmDir + String.format(" -- %s", options);
             logger.debug("Executing: " + fullCommand);
             Process p = runtime.exec(fullCommand, null, CASSANDRA_DIR);
-
-            BufferedReader outReaderOutput = new BufferedReader(new InputStreamReader(p.getInputStream()));
-            String line = outReaderOutput.readLine();
-            String output = "";
-
-            while (line != null)
-            {
-                output += line + "\n";
-                line = outReaderOutput.readLine();
-            }
-            return output;
+            return p.getInputStream();
         }
         catch (IOException e)
         {
@@ -261,7 +266,9 @@ public class CCMBridge extends Bridge
         {
             fullCommand = "ccm node" + node.getName() + " nodetool " + command + " " + arguments;
         }
-        executeAndPrint(fullCommand);
+
+        InputStream output = executeAndStream(fullCommand);
+        printStream(output);
     }
 
     public void removeOldCluster()
@@ -335,7 +342,9 @@ public class CCMBridge extends Bridge
         {
             fullCommand = "ccm node" + node.getName() + " sstablesplit " + options;
         }
-        executeAndPrint(fullCommand);
+
+        InputStream output = executeAndStream(fullCommand);
+        printStream(output);
     }
 
     public void ssTableMetaData(Node node, String keyspace)
@@ -372,8 +381,44 @@ public class CCMBridge extends Bridge
 
     public String stress(String options)
     {
-        String command = "ccm stress ";
-        return executeAndReadWithToolOptions(command, options);
+        try
+        {
+            String command = "ccm stress ";
+            InputStream result = executeAndReadWithToolOptions(command, options);
+            BufferedReader outReaderOutput = new BufferedReader(new InputStreamReader(result));
+            String line = outReaderOutput.readLine();
+            String output = "";
+
+            while (line != null)
+            {
+                output += line + "\n";
+                line = outReaderOutput.readLine();
+            }
+            return output;
+        }
+        catch (IOException e)
+        {
+            throw new RuntimeException(e);
+        }
+
+    }
+
+    public void printStream(InputStream output)
+    {
+        try
+        {
+            BufferedReader outReaderOutput = new BufferedReader(new InputStreamReader(output));
+            String line = outReaderOutput.readLine();
+            while (line != null)
+            {
+                System.out.println(line);
+                line = outReaderOutput.readLine();
+            }
+        }
+        catch (IOException e)
+        {
+            throw new RuntimeException(e);
+        }
     }
 }
 
