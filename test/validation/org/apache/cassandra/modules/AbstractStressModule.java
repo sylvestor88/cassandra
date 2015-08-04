@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.modules;
 
-import java.io.FileNotFoundException;
 import java.util.concurrent.Future;
 
 import org.apache.cassandra.HarnessContext;

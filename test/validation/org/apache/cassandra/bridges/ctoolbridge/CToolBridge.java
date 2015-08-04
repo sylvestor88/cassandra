@@ -21,6 +21,7 @@ package org.apache.cassandra.bridges.ctoolbridge;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.util.Map;
 
@@ -152,11 +153,7 @@ public class CToolBridge extends Bridge
                 combinedResult += result;
             }
         }
-
-        if (ArchiveClusterLogs.countErrors(combinedResult))
-            return combinedResult;
-        else
-            return "";
+        return  combinedResult;
     }
 
     private void execute(String command, Object... args)
@@ -235,6 +232,21 @@ public class CToolBridge extends Bridge
             }
 
             return output;
+        }
+        catch (IOException e)
+        {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private InputStream executeAndStream(String command, Object... args)
+    {
+        try
+        {
+            String fullCommand = String.format(command, args);
+            logger.debug("Executing: " + fullCommand);
+            Process p = runtime.exec(fullCommand, null, CASSANDRA_DIR);
+            return p.getInputStream();
         }
         catch (IOException e)
         {
