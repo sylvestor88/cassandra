@@ -231,7 +231,7 @@ public class CCMBridge extends Bridge
     {
         String clusterLogsPath = ccmDir + "/" + DEFAULT_CLUSTER_NAME;
         String folderName = testName;
-        String existingFolder = CASSANDRA_DIR + "/build/test/logs/validation/" + folderName;
+        String existingFolder = CASSANDRA_DIR + "/build/test/logs/validation/ccmbridge/" + folderName;
 
         if(ArchiveClusterLogs.checkForFolder(existingFolder))
         {
@@ -242,7 +242,7 @@ public class CCMBridge extends Bridge
         {
             File sourceFile = new File(clusterLogsPath + "/node" + count + "/logs" + "/system.log");
 
-            File destFile = new File(CASSANDRA_DIR + "/build/test/logs/validation/" + folderName + "/node" + count + ".log");
+            File destFile = new File(CASSANDRA_DIR + "/build/test/logs/validation/ccmbridge/" + folderName + "/node" + count + ".log");
 
             try
             {
