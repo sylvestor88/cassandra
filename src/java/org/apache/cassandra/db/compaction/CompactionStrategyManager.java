@@ -18,16 +18,9 @@
 package org.apache.cassandra.db.compaction;
 
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.Callable;
 
-import com.google.common.collect.ImmutableMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -36,17 +29,12 @@ import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.Memtable;
 import org.apache.cassandra.db.lifecycle.LifecycleTransaction;
 import org.apache.cassandra.db.lifecycle.SSTableSet;
-import org.apache.cassandra.db.lifecycle.View;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.sstable.ISSTableScanner;
-import org.apache.cassandra.notifications.INotification;
-import org.apache.cassandra.notifications.INotificationConsumer;
-import org.apache.cassandra.notifications.SSTableAddedNotification;
-import org.apache.cassandra.notifications.SSTableDeletingNotification;
-import org.apache.cassandra.notifications.SSTableListChangedNotification;
-import org.apache.cassandra.notifications.SSTableRepairStatusChanged;
+import org.apache.cassandra.notifications.*;
+import org.apache.cassandra.schema.CompactionParams;
 
 /**
  * Manages the compaction strategies.
@@ -56,14 +44,13 @@ import org.apache.cassandra.notifications.SSTableRepairStatusChanged;
  */
 public class CompactionStrategyManager implements INotificationConsumer
 {
-    protected static final String COMPACTION_ENABLED = "enabled";
     private static final Logger logger = LoggerFactory.getLogger(CompactionStrategyManager.class);
     private final ColumnFamilyStore cfs;
     private volatile AbstractCompactionStrategy repaired;
     private volatile AbstractCompactionStrategy unrepaired;
     private volatile boolean enabled = true;
     public boolean isActive = true;
-    private Map<String, String> options;
+    private volatile CompactionParams params;
 
     public CompactionStrategyManager(ColumnFamilyStore cfs)
     {
@@ -71,9 +58,8 @@ public class CompactionStrategyManager implements INotificationConsumer
         logger.debug("{} subscribed to the data tracker.", this);
         this.cfs = cfs;
         reload(cfs.metadata);
-        String optionValue = cfs.metadata.compactionStrategyOptions.get(COMPACTION_ENABLED);
-        enabled = optionValue == null || Boolean.parseBoolean(optionValue);
-        options = ImmutableMap.copyOf(cfs.metadata.compactionStrategyOptions);
+        params = cfs.metadata.params.compaction;
+        enabled = params.isEnabled();
     }
 
     /**
@@ -159,13 +145,12 @@ public class CompactionStrategyManager implements INotificationConsumer
         unrepaired.shutdown();
     }
 
-
     public synchronized void maybeReload(CFMetaData metadata)
     {
-        if (repaired != null && repaired.getClass().equals(metadata.compactionStrategyClass)
-                && unrepaired != null && unrepaired.getClass().equals(metadata.compactionStrategyClass)
-                && repaired.options.equals(metadata.compactionStrategyOptions) // todo: assumes all have the same options
-                && unrepaired.options.equals(metadata.compactionStrategyOptions))
+        if (repaired != null && repaired.getClass().equals(metadata.params.compaction.klass())
+                && unrepaired != null && unrepaired.getClass().equals(metadata.params.compaction.klass())
+                && repaired.options.equals(metadata.params.compaction.options()) // todo: assumes all have the same options
+                && unrepaired.options.equals(metadata.params.compaction.options()))
             return;
         reload(metadata);
     }
@@ -178,14 +163,14 @@ public class CompactionStrategyManager implements INotificationConsumer
      */
     public synchronized void reload(CFMetaData metadata)
     {
-        boolean disabledWithJMX = !isEnabled() && shouldBeEnabled();
+        boolean disabledWithJMX = !enabled && shouldBeEnabled();
         if (repaired != null)
             repaired.shutdown();
         if (unrepaired != null)
             unrepaired.shutdown();
         repaired = metadata.createCompactionStrategyInstance(cfs);
         unrepaired = metadata.createCompactionStrategyInstance(cfs);
-        options = ImmutableMap.copyOf(metadata.compactionStrategyOptions);
+        params = metadata.params.compaction;
         if (disabledWithJMX || !shouldBeEnabled())
             disable();
         else
@@ -445,8 +430,7 @@ public class CompactionStrategyManager implements INotificationConsumer
 
     public boolean shouldBeEnabled()
     {
-        String optionValue = options.get(COMPACTION_ENABLED);
-        return optionValue == null || Boolean.parseBoolean(optionValue);
+        return params.isEnabled();
     }
 
     public String getName()
