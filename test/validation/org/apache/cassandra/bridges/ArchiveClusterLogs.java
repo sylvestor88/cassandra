@@ -132,7 +132,7 @@ public class ArchiveClusterLogs
         return file.getAbsolutePath();
     }
 
-    public static boolean countErrors(String errorLogs)
+    public static boolean countErrors(String errorLogs, int nodes)
     {
         int count = 0;
         Pattern p = Pattern.compile("ERROR");
@@ -142,7 +142,7 @@ public class ArchiveClusterLogs
             count++;
         }
 
-        if (count > 6)
+        if (count > nodes * 3)
             return true;
         else
             return false;

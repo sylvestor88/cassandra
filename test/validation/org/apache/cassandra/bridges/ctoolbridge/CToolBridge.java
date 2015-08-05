@@ -148,7 +148,12 @@ public class CToolBridge extends Bridge
                 combinedResult += result;
             }
         }
-        return  combinedResult;
+
+        if (ArchiveClusterLogs.countErrors(combinedResult, nodeCount))
+            return combinedResult;
+
+        return "";
+
     }
 
     private void execute(String command, Object... args)
@@ -253,12 +258,10 @@ public class CToolBridge extends Bridge
             ArchiveClusterLogs.zipExistingDirectory(existingFolder);
         }
 
-        for(int count = 0; count < nodeCount; count++)
+        for(int count = 1; count <= nodeCount; count++)
         {
-            int logNameCount = count + 1;
-            String sourceFile = "/home/automaton/cassandra/logs/system.log";
-            String destFile = ArchiveClusterLogs.getFullPath(new File(CASSANDRA_DIR + "/build/test/logs/validation/ctoolbridge/" + folderName + "/node" + logNameCount + ".log"), existingFolder);
-
+            String sourceFile = "/home/automaton/fab/cassandra/logs/system.log";
+            String destFile = ArchiveClusterLogs.getFullPath(new File(CASSANDRA_DIR + "/build/test/logs/validation/ctoolbridge/" + folderName + "/node" + count + ".log"), existingFolder);
             execute("ctool scp -r " + DEFAULT_CLUSTER_NAME + " " + count + " " + destFile + " " + sourceFile);
         }
     }
@@ -273,7 +276,7 @@ public class CToolBridge extends Bridge
         }
         else
         {
-            fullCommand = "/home/automaton/cassandra/bin/nodetool -h " + hostname + " " + command + " " + arguments;
+            fullCommand = "/home/automaton/fab/cassandra/bin/nodetool -h " + hostname + " " + command + " " + arguments;
         }
 
         InputStream output = executeRunAndStream(fullCommand, node.getName());
