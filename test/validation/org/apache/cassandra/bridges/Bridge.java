@@ -27,6 +27,7 @@ public abstract class Bridge
     protected static final Runtime runtime = Runtime.getRuntime();
 
     public abstract void stop();
+    public abstract void start();
     public abstract void destroy();
     public abstract String readClusterLogs(String testName);
     public abstract void captureLogs(String testName);
