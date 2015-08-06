@@ -24,7 +24,9 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.Reader;
 import java.util.Map;
+import java.util.Scanner;
 
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
@@ -44,6 +46,7 @@ public class CToolBridge extends Bridge
 {
     private int nodeCount;
     JSONObject cassObj = new JSONObject();
+    int bootstrap_attempts = 0;
     static final File CASSANDRA_DIR = new File("./");
     private final String DEFAULT_CLUSTER_NAME = "validation";
 
@@ -69,12 +72,12 @@ public class CToolBridge extends Bridge
             else
             {
                 execute("ctool destroy " + DEFAULT_CLUSTER_NAME);
-                execute("ctool launch %s %d", DEFAULT_CLUSTER_NAME, nodeCount + 1);
+                execute("ctool launch %s %d", DEFAULT_CLUSTER_NAME, nodeCount);
             }
         }
         else
         {
-            execute("ctool launch %s %d", DEFAULT_CLUSTER_NAME, nodeCount + 1);
+            execute("ctool launch %s %d", DEFAULT_CLUSTER_NAME, nodeCount);
         }
     }
 
@@ -107,7 +110,7 @@ public class CToolBridge extends Bridge
 
     public boolean checkNodeCount(int nodes)
     {
-        return nodes + 1 == clusterEndpoints().length;
+        return nodes == clusterEndpoints().length;
     }
 
     public void installAndRunCass()
@@ -119,14 +122,14 @@ public class CToolBridge extends Bridge
         executeRun("echo \"git_repos.append(('local', '" + local_repo() + "'))\" | tee -a ~/cstar_perf/tool/cstar_perf/tool/fab_cassandra.py", "0");
         execute("ctool scp -R " + DEFAULT_CLUSTER_NAME + " 0 " + cassPath + " ~/cassandra");
         executeRun("git clone --bare ~/cassandra ~/cassandra.git", "0");
-        execute("ctool scp " + DEFAULT_CLUSTER_NAME + " 0 " +  CASSANDRA_DIR + "/test/validation/org/apache/cassandra/bridges/ctoolbridge/cassandra.json ~/");
-        executeRun("cstar_perf_bootstrap ~/cassandra.json", "0");
+        execute("ctool scp " + DEFAULT_CLUSTER_NAME + " 0 " + CASSANDRA_DIR + "/test/validation/org/apache/cassandra/bridges/ctoolbridge/cassandra.json ~/");
+        bootstrapCass();
     }
 
     public boolean checkClusterExists()
     {
         String result = executeAndRead("ctool list");
-        if(result.indexOf(DEFAULT_CLUSTER_NAME) != -1)
+        if (result.indexOf(DEFAULT_CLUSTER_NAME) != -1)
             return true;
         else
             return false;
@@ -137,9 +140,9 @@ public class CToolBridge extends Bridge
         String combinedResult = "";
         String existingFolder = CASSANDRA_DIR + "/build/test/logs/validation/ctoolbridge/" + testName;
 
-        if(ArchiveClusterLogs.checkForFolder(existingFolder))
+        if (ArchiveClusterLogs.checkForFolder(existingFolder))
         {
-            for(int count = 1; count <= nodeCount; count++)
+            for (int count = 0; count < nodeCount; count++)
             {
                 File searchFile = new File(CASSANDRA_DIR + "/build/test/logs/validation/ctoolbridge/" + testName + "/node" + count + ".log");
                 String filePath = searchFile.getAbsolutePath();
@@ -153,7 +156,6 @@ public class CToolBridge extends Bridge
             return combinedResult;
 
         return "";
-
     }
 
     private void execute(String command, Object... args)
@@ -217,7 +219,8 @@ public class CToolBridge extends Bridge
         }
     }
 
-    public void executeRun(String command, String nodes){
+    public void executeRun(String command, String nodes)
+    {
 
         try
         {
@@ -225,7 +228,9 @@ public class CToolBridge extends Bridge
             Process p = Runtime.getRuntime().exec(commandArray);
             BufferedReader outReaderOutput = new BufferedReader(new InputStreamReader(p.getInputStream()));
 
-            while ((outReaderOutput.readLine()) != null) {}
+            while ((outReaderOutput.readLine()) != null)
+            {
+            }
             p.waitFor();
         }
         catch (Exception e)
@@ -253,12 +258,12 @@ public class CToolBridge extends Bridge
         String folderName = testName;
         String existingFolder = CASSANDRA_DIR + "/build/test/logs/validation/ctoolbridge/" + folderName;
 
-        if(ArchiveClusterLogs.checkForFolder(existingFolder))
+        if (ArchiveClusterLogs.checkForFolder(existingFolder))
         {
             ArchiveClusterLogs.zipExistingDirectory(existingFolder);
         }
 
-        for(int count = 1; count <= nodeCount; count++)
+        for (int count = 0; count < nodeCount; count++)
         {
             String sourceFile = "/home/automaton/fab/cassandra/logs/system.log";
             String destFile = ArchiveClusterLogs.getFullPath(new File(CASSANDRA_DIR + "/build/test/logs/validation/ctoolbridge/" + folderName + "/node" + count + ".log"), existingFolder);
@@ -376,6 +381,36 @@ public class CToolBridge extends Bridge
         catch (Exception e)
         {
             throw new RuntimeException();
+        }
+    }
+
+    public void bootstrapCass()
+    {
+        bootstrap_attempts += 1;
+        InputStream output = executeRunAndStream("cstar_perf_bootstrap ~/cassandra.json", "0");
+        Reader outReaderOutput = new BufferedReader(new InputStreamReader(output));
+        if (streamContainsString(outReaderOutput, "All nodes available!"))
+        {
+            return;
+        }
+        else
+        {
+            if (bootstrap_attempts > 5)
+                throw new RuntimeException("Unable to bootstrap Cassandra!!!");
+            bootstrapCass();
+        }
+    }
+
+    public boolean streamContainsString(Reader reader, String searchString)
+    {
+        Scanner streamScanner = new Scanner(reader);
+        if (streamScanner.findWithinHorizon(searchString, 0) != null)
+        {
+            return true;
+        }
+        else
+        {
+            return false;
         }
     }
 }
