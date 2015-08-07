@@ -29,3 +29,8 @@ for the modules, and cassandra.yaml options. For more details on how to format
 a yaml, please see the README in the htest package directory.
 
 Tests can be run via the ant target `ant htest`
+
+CCMBridge
+---------
+Please refer CCMBridge.md for instructions on how to setup and run the Harness with CCMBridge
+
