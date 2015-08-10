@@ -119,11 +119,14 @@ public class CToolBridge extends Bridge
         chooseRevision();
         writeToJSON();
         execute("python " + CASSANDRA_DIR + "/test/validation/org/apache/cassandra/bridges/ctoolbridge/ctool_launch.py " + CASSANDRA_DIR + "/test/validation/org/apache/cassandra/bridges/ctoolbridge/cluster.json");
-        executeRun("echo \"git_repos.append(('local', '" + local_repo() + "'))\" | tee -a ~/cstar_perf/tool/cstar_perf/tool/fab_cassandra.py", "0");
+        executeRun("echo \"GIT_REPOS.append(('local', '" + local_repo() + "'))\" | tee -a ~/cstar_perf/tool/cstar_perf/tool/fab_cassandra.py", "0");
         execute("ctool scp -R " + DEFAULT_CLUSTER_NAME + " 0 " + cassPath + " ~/cassandra");
         executeRun("git clone --bare ~/cassandra ~/cassandra.git", "0");
         execute("ctool scp " + DEFAULT_CLUSTER_NAME + " 0 " + CASSANDRA_DIR + "/test/validation/org/apache/cassandra/bridges/ctoolbridge/cassandra.json ~/");
         bootstrapCass();
+        stop();
+        addBroadcastRPC();
+        start();
     }
 
     public boolean checkClusterExists()
@@ -305,7 +308,7 @@ public class CToolBridge extends Bridge
         }
         else
         {
-            fullCommand = "/home/automaton/fab/cassandra/tools/bin/sstablesplit /mnt/data1/cassandra/data/" + keyspace_path;
+            fullCommand = "/home/automaton/fab/cassandra/tools/bin/sstablesplit " + options + " /mnt/data1/cassandra/data/" + keyspace_path;
         }
 
         InputStream output = executeRunAndStream(fullCommand, node.getName());
@@ -411,6 +414,28 @@ public class CToolBridge extends Bridge
         else
         {
             return false;
+        }
+    }
+
+    public void addBroadcastRPC()
+    {
+        String[] endpoints = clusterEndpoints();
+
+        for (int count = 0; count < nodeCount; count++)
+        {
+            String node = Integer.toString(count);
+
+            if(endpoints[count].indexOf("ec2") != -1)
+            {
+                String[] split = endpoints[count].split("\\.");
+                String ec2ip = split[0].substring(4);
+                String public_ip = ec2ip.replaceAll("\\-", ".");
+                executeRun("echo \"broadcast_rpc_address: " + public_ip + "\" | tee -a ~/fab/cassandra/conf/cassandra.yaml", node);
+            }
+            else
+            {
+                executeRun("echo \"broadcast_rpc_address: " + endpoints[count] + "\" | tee -a ~/fab/cassandra/conf/cassandra.yaml", node);
+            }
         }
     }
 }
