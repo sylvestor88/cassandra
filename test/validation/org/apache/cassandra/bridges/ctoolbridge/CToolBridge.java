@@ -117,9 +117,9 @@ public class CToolBridge extends Bridge
     {
         String cassPath = System.getProperty("user.dir");
         chooseRevision();
-        writeToJSON();
+        writeToJSON(cassObj, "cassandra.json");
         execute("python " + CASSANDRA_DIR + "/test/validation/org/apache/cassandra/bridges/ctoolbridge/ctool_launch.py " + CASSANDRA_DIR + "/test/validation/org/apache/cassandra/bridges/ctoolbridge/cluster.json");
-        executeRun("echo \"GIT_REPOS.append(('local', '" + local_repo() + "'))\" | tee -a ~/cstar_perf/tool/cstar_perf/tool/fab_cassandra.py", "0");
+        add_remote();
         execute("ctool scp -R " + DEFAULT_CLUSTER_NAME + " 0 " + cassPath + " ~/cassandra");
         executeRun("git clone --bare ~/cassandra ~/cassandra.git", "0");
         execute("ctool scp " + DEFAULT_CLUSTER_NAME + " 0 " + CASSANDRA_DIR + "/test/validation/org/apache/cassandra/bridges/ctoolbridge/cassandra.json ~/");
@@ -370,14 +370,14 @@ public class CToolBridge extends Bridge
         }
     }
 
-    public void writeToJSON()
+    public void writeToJSON(JSONObject object, String filename)
     {
         try
         {
-            File file = new File(CASSANDRA_DIR + "/test/validation/org/apache/cassandra/bridges/ctoolbridge/cassandra.json");
+            File file = new File(CASSANDRA_DIR + "/test/validation/org/apache/cassandra/bridges/ctoolbridge/" + filename);
             file.createNewFile();
             FileWriter fileWriter = new FileWriter(file);
-            fileWriter.write(cassObj.toJSONString());
+            fileWriter.write(object.toJSONString());
             fileWriter.flush();
             fileWriter.close();
         }
@@ -385,6 +385,14 @@ public class CToolBridge extends Bridge
         {
             throw new RuntimeException();
         }
+    }
+
+    public void add_remote()
+    {
+        JSONObject git_remote = new JSONObject();
+        git_remote.put("local", local_repo());
+        writeToJSON(git_remote, "git_remotes.json");
+        execute("ctool scp " + DEFAULT_CLUSTER_NAME + " 0 " + CASSANDRA_DIR + "/test/validation/org/apache/cassandra/bridges/ctoolbridge/git_remotes.json ~/.cstar_perf");
     }
 
     public void bootstrapCass()
