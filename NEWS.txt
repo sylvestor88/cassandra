@@ -23,6 +23,12 @@ New features
      for non-primary key queries, and perform much better for indexing high
      cardinality columns.
      See http://www.datastax.com/dev/blog/new-in-cassandra-3-0-materialized-views
+   - Option to not purge unrepaired tombstones. To avoid users having data resurrected
+     if repair has not been run within gc_grace_seconds, an option has been added to
+     only allow tombstones from repaired sstables to be purged. To enable, set the
+     compaction option 'only_purge_repaired_tombstones':true but keep in mind that if
+     you do not run repair for a long time, you will keep all tombstones around which
+     can cause other problems.
 
 
 Upgrading
@@ -58,7 +64,11 @@ Upgrading
      be done by setting the new option `enabled` to `false`.
    - Only map syntax is now allowed for caching options. ALL/NONE/KEYS_ONLY/ROWS_ONLY syntax
      has been deprecated since 2.1.0 and is being removed in 3.0.0.
-
+   - Batchlog entries are now stored in a new table - system.batches.
+     The old one has been deprecated.
+   - JMX methods set/getCompactionStrategyClass have been removed, use
+     set/getCompactionParameters or set/getCompactionParametersJson instead.
+   - SizeTieredCompactionStrategy parameter cold_reads_to_omit has been removed.
 
 2.2
 ===
@@ -146,7 +156,34 @@ New features
      to convert from timestamp into date type and bigint raw value.
    - The toTimestamp(date) and toUnixTimestamp(date) functions have been added to allow
      to convert from date into timestamp type and bigint raw value.
+   - SizeTieredCompactionStrategy parameter cold_reads_to_omit has been removed.
 
+
+2.1.9
+=====
+
+Upgrading
+---------
+    - cqlsh will now display timestamps with a UTC timezone. Previously,
+      timestamps were displayed with the local timezone.
+    - Commit log files are no longer recycled by default, due to negative
+      performance implications. This can be enabled again with the 
+      commitlog_segment_recycling option in your cassandra.yaml 
+    - JMX methods set/getCompactionStrategyClass have been deprecated, use
+      set/getCompactionParameters/set/getCompactionParametersJson instead
+
+
+2.1.8
+=====
+
+Upgrading
+---------
+    - Nothing specific to this release, but please see 2.1 if you are upgrading
+      from a previous version.
+
+
+2.1.7
+=====
 
 Upgrading
 ---------

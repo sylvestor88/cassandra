@@ -51,6 +51,7 @@ import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.schema.*;
 import org.apache.cassandra.utils.*;
+import org.apache.cassandra.utils.AbstractIterator;
 import org.github.jamm.Unmetered;
 
 /**
@@ -105,7 +106,7 @@ public final class CFMetaData
     private final Map<ByteBuffer, ColumnDefinition> columnMetadata = new ConcurrentHashMap<>(); // not on any hot path
     private volatile List<ColumnDefinition> partitionKeyColumns;  // Always of size keyValidator.componentsCount, null padded if necessary
     private volatile List<ColumnDefinition> clusteringColumns;    // Of size comparator.componentsCount or comparator.componentsCount -1, null padded if necessary
-    private volatile PartitionColumns partitionColumns;
+    private volatile PartitionColumns partitionColumns;           // Always non-PK, non-clustering columns
 
     // For dense tables, this alias the single non-PK column the table contains (since it can only have one). We keep
     // that as convenience to access that column more easily (but we could replace calls by partitionColumns().iterator().next()
@@ -781,13 +782,14 @@ public final class CFMetaData
         return strategyClass;
     }
 
-    public AbstractCompactionStrategy createCompactionStrategyInstance(ColumnFamilyStore cfs)
+    public static AbstractCompactionStrategy createCompactionStrategyInstance(ColumnFamilyStore cfs,
+                                                                              CompactionParams compactionParams)
     {
         try
         {
             Constructor<? extends AbstractCompactionStrategy> constructor =
-                params.compaction.klass().getConstructor(ColumnFamilyStore.class, Map.class);
-            return constructor.newInstance(cfs, params.compaction.options());
+                compactionParams.klass().getConstructor(ColumnFamilyStore.class, Map.class);
+            return constructor.newInstance(cfs, compactionParams.options());
         }
         catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException | InstantiationException e)
         {

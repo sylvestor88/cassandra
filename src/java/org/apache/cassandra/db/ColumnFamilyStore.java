@@ -248,14 +248,35 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         };
     }
 
-    public void setCompactionStrategyClass(String compactionStrategyClass)
+    public void setCompactionParametersJson(String options)
     {
-        throw new UnsupportedOperationException("ColumnFamilyStore.setCompactionStrategyClass() method is no longer supported");
+        setCompactionParameters(FBUtilities.fromJsonMap(options));
     }
 
-    public String getCompactionStrategyClass()
+    public String getCompactionParametersJson()
     {
-        return metadata.params.compaction.klass().getName();
+        return FBUtilities.json(getCompactionParameters());
+    }
+
+    public void setCompactionParameters(Map<String, String> options)
+    {
+        try
+        {
+            CompactionParams compactionParams = CompactionParams.fromMap(options);
+            compactionParams.validate();
+            compactionStrategyManager.setNewLocalCompactionStrategy(compactionParams);
+        }
+        catch (Throwable t)
+        {
+            logger.error("Could not set new local compaction strategy", t);
+            // dont propagate the ConfigurationException over jmx, user will only see a ClassNotFoundException
+            throw new IllegalArgumentException("Could not set new local compaction strategy: "+t.getMessage());
+        }
+    }
+
+    public Map<String, String> getCompactionParameters()
+    {
+        return compactionStrategyManager.getCompactionParams().asMap();
     }
 
     public Map<String,String> getCompressionParameters()
@@ -289,7 +310,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         }
     }
 
-    public ColumnFamilyStore(Keyspace keyspace,
+    private ColumnFamilyStore(Keyspace keyspace,
                              String columnFamilyName,
                              int generation,
                              CFMetaData metadata,
@@ -436,7 +457,10 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         latencyCalculator.cancel(false);
         compactionStrategyManager.shutdown();
         SystemKeyspace.removeTruncationRecord(metadata.cfId);
+
         data.dropSSTables();
+        TransactionLogs.waitForDeletions();
+
         indexManager.invalidate();
         materializedViewManager.invalidate();
 
@@ -1601,8 +1625,9 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
                         logger.debug("using snapshot sstable {}", entries.getKey());
                     // open without tracking hotness
                     sstable = SSTableReader.open(entries.getKey(), entries.getValue(), metadata, true, false);
-                    // This is technically not necessary since it's a snapshot but makes things easier
                     refs.tryRef(sstable);
+                    // release the self ref as we never add the snapshot sstable to DataTracker where it is otherwise released
+                    sstable.selfRef().release();
                 }
                 else if (logger.isDebugEnabled())
                 {
@@ -2052,6 +2077,19 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
             count += n;
         }
         return count > 0 ? (int) (sum / count) : 0;
+    }
+
+    public double getMeanPartitionSize()
+    {
+        long sum = 0;
+        long count = 0;
+        for (SSTableReader sstable : getSSTables(SSTableSet.CANONICAL))
+        {
+            long n = sstable.getEstimatedPartitionSize().count();
+            sum += sstable.getEstimatedPartitionSize().mean() * n;
+            count += n;
+        }
+        return count > 0 ? sum * 1.0 / count : 0;
     }
 
     public long estimateKeys()

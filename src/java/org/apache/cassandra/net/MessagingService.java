@@ -135,11 +135,12 @@ public final class MessagingService implements MessagingServiceMBean
         PAXOS_COMMIT,
         @Deprecated PAGED_RANGE,
         BATCHLOG_MUTATION,
-        MATERIALIZED_VIEW_MUTATION,
         // remember to add new verbs at the end, since we serialize by ordinal
         UNUSED_1,
         UNUSED_2,
         UNUSED_3,
+        UNUSED_4,
+        UNUSED_5,
         ;
     }
 
@@ -147,7 +148,6 @@ public final class MessagingService implements MessagingServiceMBean
     {{
         put(Verb.MUTATION, Stage.MUTATION);
         put(Verb.COUNTER_MUTATION, Stage.COUNTER_MUTATION);
-        put(Verb.MATERIALIZED_VIEW_MUTATION, Stage.MATERIALIZED_VIEW_MUTATION);
         put(Verb.BATCHLOG_MUTATION, Stage.BATCHLOG_MUTATION);
         put(Verb.READ_REPAIR, Stage.MUTATION);
         put(Verb.TRUNCATE, Stage.MUTATION);
@@ -208,11 +208,10 @@ public final class MessagingService implements MessagingServiceMBean
 
         put(Verb.MUTATION, Mutation.serializer);
         put(Verb.BATCHLOG_MUTATION, Mutation.serializer);
-        put(Verb.MATERIALIZED_VIEW_MUTATION, Mutation.serializer);
         put(Verb.READ_REPAIR, Mutation.serializer);
         put(Verb.READ, ReadCommand.serializer);
-        //put(Verb.RANGE_SLICE, ReadCommand.legacyRangeSliceCommandSerializer);
-        //put(Verb.PAGED_RANGE, ReadCommand.legacyPagedRangeCommandSerializer);
+        put(Verb.RANGE_SLICE, ReadCommand.legacyRangeSliceCommandSerializer);
+        put(Verb.PAGED_RANGE, ReadCommand.legacyPagedRangeCommandSerializer);
         put(Verb.BOOTSTRAP_TOKEN, BootStrapper.StringSerializer.instance);
         put(Verb.REPAIR_MESSAGE, RepairMessage.serializer);
         put(Verb.GOSSIP_DIGEST_ACK, GossipDigestAck.serializer);
@@ -236,7 +235,6 @@ public final class MessagingService implements MessagingServiceMBean
     {{
         put(Verb.MUTATION, WriteResponse.serializer);
         put(Verb.BATCHLOG_MUTATION, WriteResponse.serializer);
-        put(Verb.MATERIALIZED_VIEW_MUTATION, WriteResponse.serializer);
         put(Verb.READ_REPAIR, WriteResponse.serializer);
         put(Verb.COUNTER_MUTATION, WriteResponse.serializer);
         put(Verb.RANGE_SLICE, ReadResponse.legacyRangeSliceReplySerializer);
@@ -300,7 +298,6 @@ public final class MessagingService implements MessagingServiceMBean
     public static final EnumSet<Verb> DROPPABLE_VERBS = EnumSet.of(Verb._TRACE,
                                                                    Verb.MUTATION,
                                                                    Verb.BATCHLOG_MUTATION, //FIXME: should this be droppable??
-                                                                   Verb.MATERIALIZED_VIEW_MUTATION,
                                                                    Verb.COUNTER_MUTATION,
                                                                    Verb.READ_REPAIR,
                                                                    Verb.READ,
@@ -403,8 +400,7 @@ public final class MessagingService implements MessagingServiceMBean
 
                 if (expiredCallbackInfo.shouldHint())
                 {
-                    Mutation mutation = (Mutation) ((WriteCallbackInfo) expiredCallbackInfo).sentMessage.payload;
-
+                    Mutation mutation = ((WriteCallbackInfo) expiredCallbackInfo).mutation();
                     return StorageProxy.submitHint(mutation, expiredCallbackInfo.target, null);
                 }
 
@@ -622,16 +618,16 @@ public final class MessagingService implements MessagingServiceMBean
     }
 
     public int addCallback(IAsyncCallback cb,
-                           MessageOut<? extends IMutation> message,
+                           MessageOut<?> message,
                            InetAddress to,
                            long timeout,
                            ConsistencyLevel consistencyLevel,
                            boolean allowHints)
     {
         assert message.verb == Verb.MUTATION
-               || message.verb == Verb.BATCHLOG_MUTATION
-               || message.verb == Verb.MATERIALIZED_VIEW_MUTATION
-               || message.verb == Verb.COUNTER_MUTATION;
+            || message.verb == Verb.BATCHLOG_MUTATION
+            || message.verb == Verb.COUNTER_MUTATION
+            || message.verb == Verb.PAXOS_COMMIT;
         int messageId = nextId();
 
         CallbackInfo previous = callbacks.put(messageId,
@@ -682,7 +678,7 @@ public final class MessagingService implements MessagingServiceMBean
     }
 
     /**
-     * Send a mutation message to a given endpoint. This method specifies a callback
+     * Send a mutation message or a Paxos Commit to a given endpoint. This method specifies a callback
      * which is invoked with the actual response.
      * Also holds the message (only mutation messages) to determine if it
      * needs to trigger a hint (uses StorageProxy for that).
@@ -693,9 +689,9 @@ public final class MessagingService implements MessagingServiceMBean
      *                suggest that a timeout occurred to the invoker of the send().
      * @return an reference to message id used to match with the result
      */
-    public int sendRR(MessageOut<? extends IMutation> message,
+    public int sendRR(MessageOut<?> message,
                       InetAddress to,
-                      AbstractWriteResponseHandler<? extends IMutation> handler,
+                      AbstractWriteResponseHandler<?> handler,
                       boolean allowHints)
     {
         int id = addCallback(handler, message, to, message.getTimeout(), handler.consistencyLevel, allowHints);
@@ -904,7 +900,7 @@ public final class MessagingService implements MessagingServiceMBean
     {
         List<String> logs = getDroppedMessagesLogs();
         for (String log : logs)
-            logger.error(log);
+            logger.info(log);
 
         if (logs.size() > 0)
             StatusLogger.log();
@@ -1109,6 +1105,12 @@ public final class MessagingService implements MessagingServiceMBean
     public static IPartitioner globalPartitioner()
     {
         return StorageService.instance.getTokenMetadata().partitioner;
+    }
+
+    public static void validatePartitioner(Collection<? extends AbstractBounds<?>> allBounds)
+    {
+        for (AbstractBounds<?> bounds : allBounds)
+            validatePartitioner(bounds);
     }
 
     public static void validatePartitioner(AbstractBounds<?> bounds)
