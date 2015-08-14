@@ -1,0 +1,4 @@
+nodeCount: 3
+modules:
+    - [SimpleWriteModule]
+    - [UpdateCounterModule]

@@ -53,13 +53,12 @@ public class SimpleWriteModule extends Module
         {
             Cluster cluster = Cluster.builder().addContactPoints(bridge.clusterEndpoints()[0]).build();
             Session session = cluster.connect();
-            session.execute("CREATE KEYSPACE k WITH replication = {'class': 'SimpleStrategy' , 'replication_factor': 1}");
+            session.execute("CREATE KEYSPACE k WITH replication = {'class': 'SimpleStrategy' , 'replication_factor': 3}");
             session.execute("USE k");
             session.execute("CREATE TABLE t ( id int PRIMARY KEY , v int)");
-
             PreparedStatement query = session.prepare("INSERT INTO t (id, v) VALUES (?, ?)");
 
-            for (int i = 0; i < 10000; i++)
+            for (int i = 1; i <= 100; i++)
             {
                 BoundStatement bound = query.bind(i, i);
                 session.execute(bound);
@@ -68,7 +67,7 @@ public class SimpleWriteModule extends Module
             ResultSet results = session.execute("SELECT * FROM k.t");
             try
             {
-                Assert.assertEquals(10000, results.all().size());
+                Assert.assertEquals(100, results.all().size());
             }
             catch (AssertionError e)
             {
